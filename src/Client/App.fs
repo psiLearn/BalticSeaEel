@@ -1,4 +1,4 @@
-module Ale.Client.App
+module Eel.Client.App
 
 open Elmish
 open Elmish.React
