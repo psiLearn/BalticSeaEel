@@ -11,6 +11,7 @@
   <ItemGroup>
     <PackageReference Include="FSharp.Core" Version="9.0.303" />
     <PackageReference Include="Giraffe" Version="6.2.0" />
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.1" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\\Shared\\Shared.fsproj" />
