@@ -1,5 +1,6 @@
 module Eel.Client.App
 
+open System
 open Elmish
 open Elmish.React
 open Fable.React
@@ -49,12 +50,49 @@ let inline private ofJson<'T> (json: string) : 'T = json |> JS.JSON.parse |> unb
 
 let inline private toJson (value: obj) = JS.JSON.stringify value
 
-let private fetch (url: string) (init: obj option) : JS.Promise<obj> =
+let private apiBaseUrl =
+    let origin = window.location.origin
+
+    if window.location.port = "5173" then
+        let protocol =
+            if window.location.protocol = "https:" then
+                "https"
+            else
+                "http"
+
+        $"{protocol}://{window.location.hostname}:5000"
+    else
+        origin
+
+let private combineUrl (baseUrl: string) (path: string) =
+    if path.StartsWith("http://") || path.StartsWith("https://") then
+        path
+    elif baseUrl.EndsWith("/") then
+        baseUrl.TrimEnd('/') + path
+    else
+        baseUrl + path
+
+let private fetch (path: string) (init: obj option) : JS.Promise<obj> =
+    let url = combineUrl apiBaseUrl path
+
     match init with
     | Some initObj ->
         window?fetch (url, initObj)
         |> unbox<JS.Promise<obj>>
     | None -> window?fetch (url) |> unbox<JS.Promise<obj>>
+
+let private withTimeout timeoutMs (promise: JS.Promise<'T>) : JS.Promise<'T> =
+    let timeoutPromise: JS.Promise<'T> =
+        createNew JS.Constructors.Promise (fun _resolve reject ->
+            window.setTimeout(
+                (fun _ ->
+                    reject (Exception $"Request timed out after {timeoutMs} ms" :> obj)),
+                timeoutMs)
+            |> ignore)
+        |> unbox<JS.Promise<'T>>
+
+    JS.Constructors.Promise.race [| promise :> obj; timeoutPromise :> obj |]
+    |> unbox<JS.Promise<'T>>
 
 let fetchHighScore (_: unit) =
     promise {
@@ -89,15 +127,16 @@ let saveHighScore (name, score) =
 
 let fetchVocabulary (_: unit) =
     promise {
-        let! response = fetch "/api/vocabulary" None
+        let! response =
+            fetch "/api/vocabulary" None
+            |> withTimeout 250
 
         if response?ok then
             let! text = response?text () |> unbox<JS.Promise<string>>
             return text |> ofJson<VocabularyEntry>
         else
-            return defaultVocabularyEntry
-            // let status: int = response?status |> unbox<int>
-            // return failwithf "Failed to fetch vocabulary (status %i)" status
+            let status: int = response?status |> unbox<int>
+            return failwithf "Failed to fetch vocabulary (status %i)" status
     }
 
 let fetchHighScoreCmd =
@@ -107,8 +146,11 @@ let saveHighScoreCmd name score =
     Cmd.OfPromise.either saveHighScore (name, score) HighScoreSaved (fun _ -> HighScoreSaved None)
 
 let fetchVocabularyCmd =
-    //Cmd.OfPromise.either fetchVocabulary () VocabularyLoaded (fun ex -> VocabularyFailed ex.Message)
-    defaultVocabularyEntry |> VocabularyLoaded |> Cmd.ofMsg   
+    Cmd.OfPromise.either 
+        fetchVocabulary 
+        () VocabularyLoaded 
+        (fun _ -> defaultVocabularyEntry |> VocabularyLoaded)
+    //defaultVocabularyEntry |> VocabularyLoaded |> Cmd.ofMsg   
     
 let private nextTargetChar model =
     if model.TargetIndex < model.TargetText.Length then
