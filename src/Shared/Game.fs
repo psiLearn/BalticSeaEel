@@ -2,9 +2,7 @@ namespace Shared
 
 open System
 
-type Point =
-    { X: int
-      Y: int }
+type Point = { X: int; Y: int }
 
 type Direction =
     | Up
@@ -13,15 +11,13 @@ type Direction =
     | Right
 
 type GameState =
-    { Snake: Point list
+    { Eel: Point list
       Direction: Direction
       Food: Point
       Score: int
       GameOver: bool }
 
-type HighScore =
-    { Name: string
-      Score: int }
+type HighScore = { Name: string; Score: int }
 
 module Game =
     let boardWidth = 20
@@ -47,7 +43,7 @@ module Game =
             [ { X = boardWidth / 2
                 Y = boardHeight / 2 } ]
 
-        { Snake = start
+        { Eel = start
           Direction = Direction.Right
           Food = randomPoint start
           Score = 0
@@ -60,14 +56,13 @@ module Game =
         | Direction.Left -> { head with X = head.X - 1 }
         | Direction.Right -> { head with X = head.X + 1 }
 
-    let private collides point snake =
-        snake |> List.exists ((=) point)
+    let private collides point eel = eel |> List.exists ((=) point)
 
     let move state =
         if state.GameOver then
             state
         else
-            let nextHead = advanceHead state.Direction (List.head state.Snake)
+            let nextHead = advanceHead state.Direction (List.head state.Eel)
 
             let hitsWall =
                 nextHead.X < 0
@@ -75,22 +70,23 @@ module Game =
                 || nextHead.X >= boardWidth
                 || nextHead.Y >= boardHeight
 
-            let hitsSelf = collides nextHead state.Snake
+            let hitsSelf = collides nextHead state.Eel
 
             if hitsWall || hitsSelf then
                 { state with GameOver = true }
             else
                 let growing = nextHead = state.Food
 
-                let snake =
+                let eel =
                     if growing then
-                        nextHead :: state.Snake
+                        nextHead :: state.Eel
                     else
-                        nextHead :: (state.Snake |> List.take (state.Snake.Length - 1))
+                        nextHead
+                        :: (state.Eel |> List.take (state.Eel.Length - 1))
 
                 let food =
                     if growing then
-                        randomPoint snake
+                        randomPoint eel
                     else
                         state.Food
 
@@ -101,7 +97,7 @@ module Game =
                         state.Score
 
                 { state with
-                    Snake = snake
+                    Eel = eel
                     Food = food
                     Score = score }
 
