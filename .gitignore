@@ -1,0 +1,25 @@
+# .NET build output
+bin/
+obj/
+*.user
+*.suo
+*.userprefs
+
+# VS / Rider / Ionide
+.vs/
+.idea/
+.ionide/
+
+# Fable / Vite output
+dist/
+src/Server/wwwroot/*
+!src/Server/wwwroot/.gitkeep
+
+# Node and tooling
+node_modules/
+package-lock.json
+npm-debug.log*
+
+# OS artifacts
+Thumbs.db
+.DS_Store
