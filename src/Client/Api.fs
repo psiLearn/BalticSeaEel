@@ -14,6 +14,8 @@ let inline private ofJson<'T> (json: string) : 'T = json |> JS.JSON.parse |> unb
 
 let inline private toJson (value: obj) = JS.JSON.stringify value
 
+let private log category message = printfn "[Api|%s] %s" category message
+
 let private apiBaseUrl =
     let configured: obj = window?__API_BASE_URL
 
@@ -55,17 +57,22 @@ let private withTimeout timeoutMs (promise: JS.Promise<'T>) : JS.Promise<'T> =
 
 let fetchHighScore (_: unit) =
     promise {
+        log "HighScore" "Requesting current high score."
         let! response = fetch "/api/highscore" None
 
         if response?ok then
             let! text = response?text () |> unbox<JS.Promise<string>>
+            log "HighScore" "Successfully fetched high score."
             return text |> ofJson<HighScore> |> Some
         else
+            let status: int = response?status |> unbox<int>
+            log "HighScore" $"Request failed with status {status}."
             return None
     }
 
 let saveHighScore (name, score) =
     promise {
+        log "HighScore" $"Saving score for '{name}' ({score})."
         let payload = {| name = name; score = score |} |> toJson
 
         let init =
@@ -79,21 +86,38 @@ let saveHighScore (name, score) =
 
         if response?ok then
             let! text = response?text () |> unbox<JS.Promise<string>>
+            log "HighScore" "Score saved successfully."
             return text |> ofJson<HighScore> |> Some
         else
+            let status: int = response?status |> unbox<int>
+            log "HighScore" $"Failed to save score (status {status})."
             return None
     }
 
 let fetchVocabulary (_: unit) =
     promise {
+        log "Vocabulary" "Requesting new vocabulary entry."
         let! response =
             fetch "/api/vocabulary" None
             |> withTimeout 5000
 
         if response?ok then
             let! text = response?text () |> unbox<JS.Promise<string>>
-            return text |> ofJson<VocabularyEntry>
+            log "Vocabulary" $"Received vocabulary payload: {text}"
+
+            let raw = text |> JS.JSON.parse
+
+            let entry: VocabularyEntry =
+                { Topic = raw?topic |> string
+                  Language1 = raw?language1 |> string
+                  Language2 = raw?language2 |> string
+                  Example = raw?example |> string }
+
+            log "Vocabulary" $"Parsed entry topic '{entry.Topic}'."
+            return entry
         else
+            let status: int = response?status |> unbox<int>
+            log "Vocabulary" $"Failed to fetch vocabulary (status {status}); falling back."
             return defaultVocabularyEntry
     }
 
