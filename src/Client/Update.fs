@@ -31,31 +31,41 @@ let startLoopCmd (speedMs: int) : Cmd<Msg> =
         let intervalId = window.setInterval ((fun _ -> dispatch Tick), speedMs)
 
         let handleKey (ev: KeyboardEvent) =
-            match ev.key with
-            | "ArrowUp"
-            | "w"
-            | "W" ->
-                ev.preventDefault ()
-                dispatch (ChangeDirection Direction.Up)
-            | "ArrowDown"
-            | "s"
-            | "S" ->
-                ev.preventDefault ()
-                dispatch (ChangeDirection Direction.Down)
-            | "ArrowLeft"
-            | "a"
-            | "A" ->
-                ev.preventDefault ()
-                dispatch (ChangeDirection Direction.Left)
-            | "ArrowRight"
-            | "d"
-            | "D" ->
-                ev.preventDefault ()
-                dispatch (ChangeDirection Direction.Right)
-            | " " ->
-                if ev.repeat |> not then
-                    dispatch Restart
-            | _ -> ()
+            let isTypingTarget =
+                match ev.target with
+                | :? HTMLInputElement
+                | :? HTMLTextAreaElement
+                | :? HTMLSelectElement -> true
+                | _ -> false
+
+            if isTypingTarget then
+                ()
+            else
+                match ev.key with
+                | "ArrowUp"
+                | "w"
+                | "W" ->
+                    ev.preventDefault ()
+                    dispatch (ChangeDirection Direction.Up)
+                | "ArrowDown"
+                | "s"
+                | "S" ->
+                    ev.preventDefault ()
+                    dispatch (ChangeDirection Direction.Down)
+                | "ArrowLeft"
+                | "a"
+                | "A" ->
+                    ev.preventDefault ()
+                    dispatch (ChangeDirection Direction.Left)
+                | "ArrowRight"
+                | "d"
+                | "D" ->
+                    ev.preventDefault ()
+                    dispatch (ChangeDirection Direction.Right)
+                | " " ->
+                    if ev.repeat |> not then
+                        dispatch Restart
+                | _ -> ()
 
         let handleKeyListener = fun (ev: Event) -> handleKey (ev :?> KeyboardEvent)
 
