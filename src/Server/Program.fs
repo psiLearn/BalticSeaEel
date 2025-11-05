@@ -51,8 +51,8 @@ builder.Services.AddSingleton<HighScoreStore>() |> ignore
 
 let app = builder.Build()
 
-app.UseDefaultFiles()
-app.UseStaticFiles()
-app.UseGiraffe webApp
+app.UseDefaultFiles() |> ignore
+app.UseStaticFiles() |> ignore
+app.UseGiraffe webApp |> ignore
 
 app.Run()
