@@ -1,9 +1,62 @@
 :root {
   color-scheme: dark;
   font-family: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
-  background-color: #0d0d0d;
-  color: #f5f5f5;
+
+  /* Base ocean dusk tones */
+  --color-bg-base: #0a1a1f; /* deep Baltic water */
+  --color-text-main: #e6ecec; /* pale mist light */
+  --color-bg-radial-start: #12313a; /* distant sea gradient start */
+  --color-bg-radial-end: #081216; /* deep water end */
+
+  /* Panels and shadows */
+  --color-panel-bg: rgba(10, 26, 31, 0.85);
+  --color-panel-shadow: rgba(0, 0, 0, 0.45);
+
+  /* Board / content areas */
+  --color-board-grad-start: #0d2228;
+  --color-board-grad-end: #14343c;
+  --color-board-border: rgba(255, 255, 255, 0.05);
+  --color-board-shadow: rgba(0, 0, 0, 0.45);
+  --color-cell-bg: rgba(255, 255, 255, 0.04);
+  --color-cell-border: rgba(255, 255, 255, 0.03);
+
+  /* Main object accents (eel, etc.) */
+  --color-eel-grad-start: #2b4b4e; /* kelp-green shadow */
+  --color-eel-grad-end: #345b5f;   /* tidewater highlight */
+  --color-eel-shadow: rgba(0, 0, 0, 0.35);
+
+  /* Food or highlight colors — amber + foam */
+  --color-food-grad-inner: #2f5c3b; /* deep seaweed */
+  --color-food-grad-outer: #58a16b; /* sunlit kelp green */
+  --color-food-shadow: rgba(40, 90, 50, 0.6); /* diffuse underwater glow */
+
+  /* Text and controls */
+  --color-text-secondary: rgba(230, 236, 236, 0.8);
+  --color-controls-bg: rgba(255, 255, 255, 0.05);
+  --color-controls-border: rgba(255, 255, 255, 0.04);
+  --color-input-border: rgba(255, 255, 255, 0.1);
+  --color-input-bg: rgba(5, 20, 24, 0.45);
+  --color-input-focus-border: rgba(86, 168, 176, 0.8); /* Baltic turquoise */
+  --color-input-focus-shadow: rgba(86, 168, 176, 0.25);
+
+  /* Buttons: cool amber + sea-foam contrast */
+  --color-button-shadow: rgba(86, 168, 176, 0.25);
+  --color-button-primary-start: #6ea8a5; /* pale turquoise foam */
+  --color-button-primary-end: #4c7e7b;   /* deep teal */
+  --color-button-text: #ffffff;
+  --color-button-secondary-bg: rgba(255, 255, 255, 0.08);
+
+  /* Banner */
+  --color-banner-bg: rgba(255, 255, 255, 0.06);
+  --color-banner-border: rgba(255, 255, 255, 0.05);
+
+  /* Error (cold coral vs red) */
+  --color-error: #ffb3a7; /* subdued coral blush */
+
+  background-color: var(--color-bg-base);
+  color: var(--color-text-main);
 }
+
 
 *,
 *::before,
@@ -17,16 +70,16 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: radial-gradient(circle at 25% 25%, #1f1f1f, #060606 70%);
+  background: radial-gradient(circle at 25% 25%, var(--color-bg-radial-start), var(--color-bg-radial-end) 70%);
 }
 
 .layout {
   display: flex;
   gap: 3rem;
   padding: 2.5rem;
-  background: rgba(18, 18, 18, 0.85);
+  background: var(--color-panel-bg);
   border-radius: 24px;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 24px 60px var(--color-panel-shadow);
   backdrop-filter: blur(16px);
 }
 
@@ -34,28 +87,34 @@ body {
   display: grid;
   gap: 6px;
   padding: 18px;
-  background: linear-gradient(145deg, #101010, #161616);
+  background: linear-gradient(145deg, var(--color-board-grad-start), var(--color-board-grad-end));
   border-radius: 20px;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05), inset 0 12px 24px rgba(0, 0, 0, 0.45);
+  box-shadow: inset 0 0 0 1px var(--color-board-border), inset 0 12px 24px var(--color-board-shadow);
 }
 
 .cell {
   width: 26px;
   height: 26px;
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--color-cell-bg);
   transition: background 0.1s ease, transform 0.1s ease;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+  box-shadow: inset 0 0 0 1px var(--color-cell-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--color-text-main);
 }
 
-.cell.snake {
-  background: linear-gradient(135deg, #4caf50, #2e7d32);
-  box-shadow: inset 0 0 6px rgba(0, 0, 0, 0.35);
+.cell.eel {
+  background: linear-gradient(135deg, var(--color-eel-grad-start), var(--color-eel-grad-end));
+  box-shadow: inset 0 0 6px var(--color-eel-shadow);
 }
 
 .cell.food {
-  background: radial-gradient(circle at 35% 35%, #ffccbc, #ff5722 65%);
-  box-shadow: 0 0 12px rgba(255, 87, 34, 0.6);
+  background: radial-gradient(circle at 35% 35%, var(--color-food-grad-inner), var(--color-food-grad-outer) 65%);
+  box-shadow: 0 0 12px var(--color-food-shadow);
   animation: pulse 0.6s ease-in-out infinite alternate;
 }
 
@@ -83,7 +142,7 @@ body {
 
 .sidebar p {
   margin: 0;
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--color-text-secondary);
 }
 
 .controls {
@@ -91,9 +150,9 @@ body {
   flex-direction: column;
   gap: 0.75rem;
   padding: 1.25rem;
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--color-controls-bg);
   border-radius: 16px;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+  box-shadow: inset 0 0 0 1px var(--color-controls-border);
 }
 
 .controls label {
@@ -104,15 +163,15 @@ body {
 .name-input {
   padding: 0.65rem 0.85rem;
   border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--color-input-border);
+  background: var(--color-input-bg);
   color: inherit;
 }
 
 .name-input:focus {
   outline: none;
-  border-color: rgba(255, 87, 34, 0.7);
-  box-shadow: 0 0 0 2px rgba(255, 87, 34, 0.2);
+  border-color: var(--color-input-focus-border);
+  box-shadow: 0 0 0 2px var(--color-input-focus-shadow);
 }
 
 .action {
@@ -125,13 +184,13 @@ body {
 }
 
 .action:not(:disabled) {
-  box-shadow: 0 12px 24px rgba(255, 87, 34, 0.25);
-  background: linear-gradient(135deg, #ff7043, #ff5722);
-  color: #fff;
+  box-shadow: 0 12px 24px var(--color-button-shadow);
+  background: linear-gradient(135deg, var(--color-button-primary-start), var(--color-button-primary-end));
+  color: var(--color-button-text);
 }
 
 .action.secondary {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--color-button-secondary-bg);
   box-shadow: none;
 }
 
@@ -147,8 +206,8 @@ body {
 .banner {
   padding: 1.25rem;
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.07);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  background: var(--color-banner-bg);
+  box-shadow: inset 0 0 0 1px var(--color-banner-border);
 }
 
 .banner h2 {
@@ -156,7 +215,7 @@ body {
 }
 
 .error {
-  color: #ff8a80;
+  color: var(--color-error);
   font-weight: 600;
 }
 
