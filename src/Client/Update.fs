@@ -177,4 +177,9 @@ let update msg model =
             TargetIndex = 0
             Error = None },
         Cmd.none
-    | VocabularyFailed message -> { model with Error = Some message }, Cmd.none
+    | VocabularyFailed message ->
+        { model with
+            Error = Some message
+            TargetText = fallbackTargetText
+            TargetIndex = 0 },
+        Cmd.none
