@@ -336,6 +336,20 @@ builder.Services.AddSwaggerGen(fun options ->
     options.DocumentFilter<ApiDocumentFilter>())
 |> ignore
 
+let corsPolicyName = "AllowClient"
+
+builder.Services.AddCors(fun options ->
+    options.AddPolicy(
+        corsPolicyName,
+        fun policy ->
+            policy.WithOrigins(
+                      "http://localhost:5173",
+                      "https://localhost:5173")
+                  .AllowAnyHeader()
+                  .AllowAnyMethod()
+                  |> ignore))
+|> ignore
+
 let app = builder.Build()
 
 if app.Environment.IsDevelopment() then
@@ -344,6 +358,7 @@ if app.Environment.IsDevelopment() then
 
 app.UseDefaultFiles() |> ignore
 app.UseStaticFiles() |> ignore
+app.UseCors(corsPolicyName) |> ignore
 app.UseGiraffe webApp |> ignore
 
 app.Run()
