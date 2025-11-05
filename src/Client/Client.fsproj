@@ -6,6 +6,10 @@
     <DisableImplicitSystemValueTupleReference>true</DisableImplicitSystemValueTupleReference>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="Model.fs" />
+    <Compile Include="Api.fs" />
+    <Compile Include="Update.fs" />
+    <Compile Include="View.fs" />
     <Compile Include="App.fs" />
   </ItemGroup>
   <ItemGroup>
