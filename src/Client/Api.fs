@@ -15,21 +15,16 @@ let inline private ofJson<'T> (json: string) : 'T = json |> JS.JSON.parse |> unb
 let inline private toJson (value: obj) = JS.JSON.stringify value
 
 let private apiBaseUrl =
-    let origin = window.location.origin
+    let configured: obj = window?__API_BASE_URL
 
-    if window.location.port = "5173" then
-        let protocol =
-            if window.location.protocol = "https:" then
-                "https"
-            else
-                "http"
-
-        $"{protocol}://{window.location.hostname}:5000"
-    else
-        origin
+    match configured with
+    | :? string as value when not (String.IsNullOrWhiteSpace value) -> value
+    | _ -> ""
 
 let private combineUrl (baseUrl: string) (path: string) =
     if path.StartsWith("http://") || path.StartsWith("https://") then
+        path
+    elif String.IsNullOrWhiteSpace baseUrl then
         path
     elif baseUrl.EndsWith("/") then
         baseUrl.TrimEnd('/') + path
