@@ -5,10 +5,20 @@ open Microsoft.Extensions.DependencyInjection
 open Microsoft.Extensions.Hosting
 open Microsoft.OpenApi.Models
 open Giraffe
+open Serilog
+open System
 open Eel.Server.Services
 open Eel.Server.HttpHandlers
 
+Log.Logger <-
+    LoggerConfiguration()
+        .Enrich.FromLogContext()
+        .WriteTo.Console()
+        .CreateLogger()
+
 let builder = WebApplication.CreateBuilder()
+
+builder.Host.UseSerilog() |> ignore
 
 builder.Services.AddGiraffe() |> ignore
 builder.Services.AddSingleton<HighScoreStore>() |> ignore
@@ -49,5 +59,7 @@ app.UseDefaultFiles() |> ignore
 app.UseStaticFiles() |> ignore
 app.UseCors("AllowClient") |> ignore
 app.UseGiraffe HttpHandlers.webApp |> ignore
+
+app.Lifetime.ApplicationStopped.Register(fun () -> Log.CloseAndFlush()) |> ignore
 
 app.Run()

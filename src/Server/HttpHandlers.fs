@@ -1,29 +1,35 @@
 namespace Eel.Server
-
 namespace Eel.Server
 
 open Giraffe
 open Shared
+open Serilog
 open Eel.Server.Services
 
 module HttpHandlers =
     let getHighScoreHandler: HttpHandler =
         fun next ctx ->
             let store = ctx.GetService<HighScoreStore>()
-            json (store.Get()) next ctx
+            let score = store.Get()
+            Log.Information("Returning high score {Name} -> {Score}", score.Name, score.Score)
+            json score next ctx
 
     let saveHighScoreHandler: HttpHandler =
         fun next ctx ->
             task {
                 let store = ctx.GetService<HighScoreStore>()
                 let! candidate = ctx.BindJsonAsync<HighScore>()
+                Log.Information("Received high score submission {Name} -> {Score}", candidate.Name, candidate.Score)
                 let updated = store.Upsert candidate
+                Log.Information("Updated high score now {Name} -> {Score}", updated.Name, updated.Score)
                 return! json updated next ctx
             }
 
     let getVocabularyHandler: HttpHandler =
         fun next ctx ->
-            json (Vocabulary.getRandom ()) next ctx
+            let entry = Vocabulary.getRandom ()
+            Log.Information("Serving vocabulary topic {Topic}", entry.Topic)
+            json entry next ctx
 
     let apiRoutes: HttpHandler =
         choose [ GET >=> route "/highscore" >=> getHighScoreHandler

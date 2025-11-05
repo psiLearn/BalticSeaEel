@@ -11,6 +11,8 @@ open Shared.Game
 
 let private cleanupKey = "__eelCleanup"
 
+let private log category message = printfn "[Update|%s] %s" category message
+
 let private tryCleanupPrevious () =
     let cleanupObj: obj = window?(cleanupKey)
 
@@ -23,6 +25,7 @@ let private tryCleanupPrevious () =
 
 let startLoopCmd (speedMs: int) : Cmd<Msg> =
     Cmd.ofEffect (fun dispatch ->
+        log "Loop" $"Starting loop with speed {speedMs} ms."
         tryCleanupPrevious ()
 
         let intervalId = window.setInterval ((fun _ -> dispatch Tick), speedMs)
@@ -59,6 +62,7 @@ let startLoopCmd (speedMs: int) : Cmd<Msg> =
         window.addEventListener ("keydown", handleKeyListener)
 
         let rec cleanup () =
+            log "Loop" "Cleaning up loop and event handlers."
             window.clearInterval intervalId
             window.removeEventListener ("keydown", handleKeyListener)
             window.removeEventListener ("beforeunload", unloadHandler)
@@ -70,18 +74,21 @@ let startLoopCmd (speedMs: int) : Cmd<Msg> =
         window?cleanupKey <- cleanup)
 
 let init () =
+    log "Init" "Initializing model and starting commands."
     initModel,
     Cmd.batch [ fetchHighScoreCmd
                 fetchVocabularyCmd
                 startLoopCmd initModel.SpeedMs ]
 
 let update msg model =
+    log "Update" $"Processing message: {msg}"
     match msg with
     | Tick ->
         let nextGame = Game.move model.Game
         let updatedModel = { model with Game = nextGame }
 
         if nextGame.GameOver then
+            log "Game" "Game over detected."
             updatedModel, Cmd.none
         else
             let collectedLetter = nextGame.Score > model.Game.Score
@@ -99,6 +106,8 @@ let update msg model =
 
                     let restartedGame = Game.restart ()
 
+                    log "Game" $"Phrase completed. Speed increased to {newSpeed}."
+
                     { updatedModel with
                         Game = restartedGame
                         TargetText = ""
@@ -109,11 +118,13 @@ let update msg model =
                     Cmd.batch [ startLoopCmd newSpeed
                                 fetchVocabularyCmd ]
                 else
+                    log "Game" $"Collected letter at index {nextIndex}."
                     { updatedModel with TargetIndex = nextIndex }, Cmd.none
             else
                 updatedModel, Cmd.none
     | ChangeDirection direction -> { model with Game = Game.changeDirection direction model.Game }, Cmd.none
     | Restart ->
+        log "Game" "Restart requested."
         let resetModel =
             { model with
                 Game = Game.restart ()
@@ -144,17 +155,20 @@ let update msg model =
     | HighScoreSaved result ->
         match result with
         | Some score ->
+            log "HighScore" $"High score saved for {score.Name} ({score.Score})."
             { model with
                 Saving = false
                 HighScore = Some score
                 Error = None },
             Cmd.none
         | None ->
+            log "HighScore" "Failed to save high score."
             { model with
                 Saving = false
                 Error = Some "Unable to save your high score. Please try again." },
             Cmd.none
     | VocabularyLoaded entry ->
+        log "Vocabulary" $"Loaded vocabulary entry for topic '{entry.Topic}'."
         let target =
             if model.UseExampleNext then
                 entry.Example
@@ -171,6 +185,8 @@ let update msg model =
             else
                 cleaned
 
+        log "Vocabulary" $"Using target phrase '{finalTarget}'."
+
         { model with
             Vocabulary = Some entry
             TargetText = finalTarget
@@ -178,6 +194,7 @@ let update msg model =
             Error = None },
         Cmd.none
     | VocabularyFailed message ->
+        log "Vocabulary" $"Failed to load vocabulary: {message}"
         { model with
             Error = Some message
             TargetText = fallbackTargetText
