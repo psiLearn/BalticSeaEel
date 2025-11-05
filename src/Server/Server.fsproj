@@ -7,6 +7,9 @@
     <UseAppHost>false</UseAppHost>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="Services.fs" />
+    <Compile Include="HttpHandlers.fs" />
+    <Compile Include="Swagger.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
   <ItemGroup>
