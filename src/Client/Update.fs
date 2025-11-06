@@ -14,8 +14,8 @@ module JS = Fable.Core.JS
 
 let private cleanupKey = "__eelCleanup"
 let private countdownKey = "__eelCountdown"
+let private tickKey = "__eelTick"
 let private highScoreStorageKey = "eel:highscore"
-let private loopTokenKey = "__eelLoopToken"
 
 let private log category message = printfn "[Update|%s] %s" category message
 
@@ -43,8 +43,8 @@ let private writeStoredHighScore (score: HighScore option) =
         | None -> storage.removeItem(highScoreStorageKey)
     with _ -> ()
 
-let private tryStopCountdown () =
-    let countdownObj: obj = window?(countdownKey)
+let private tryStopATick key =
+    let countdownObj: obj = window?(key)
 
     if not (isNullOrUndefined countdownObj) then
         match countdownObj with
@@ -56,7 +56,12 @@ let private tryStopCountdown () =
             window.clearTimeout id
         | _ -> ()
 
-        window?countdownKey <- null
+        window?key <- null
+//        window?loopTokenKey <- null
+let private tryStopCountdown () =
+    tryStopATick countdownKey
+let private tryStopTick () =
+    tryStopATick tickKey
 
 let private tryCleanupPrevious () =
     let cleanupObj: obj = window?(cleanupKey)
@@ -69,6 +74,9 @@ let private tryCleanupPrevious () =
         window?cleanupKey <- null
         window?loopTokenKey <- null
 
+let private stopLoopCmd : Cmd<Msg> =
+    Cmd.ofEffect (fun _ -> tryCleanupPrevious ())
+
 let scheduleCountdownCmd () : Cmd<Msg> =
     Cmd.ofEffect (fun dispatch ->
         tryStopCountdown ()
@@ -77,6 +85,9 @@ let scheduleCountdownCmd () : Cmd<Msg> =
                 (fun _ -> dispatch CountdownTick),
                 1000)
         window?countdownKey <- timeoutId)
+
+let private stopCountdownCmd : Cmd<Msg> =
+    Cmd.ofEffect (fun _ -> tryStopCountdown ())
 
 let startLoopCmd (speedMs: int) : Cmd<Msg> =
     Cmd.ofEffect (fun dispatch ->
@@ -92,6 +103,7 @@ let startLoopCmd (speedMs: int) : Cmd<Msg> =
                     if window?loopTokenKey = loopToken then
                         dispatch Tick),
                 speedMs)
+        window?(tickKey) <- intervalId
 
         let handleKey (ev: KeyboardEvent) =
             let isTypingTarget =
@@ -140,8 +152,9 @@ let startLoopCmd (speedMs: int) : Cmd<Msg> =
             window.clearTimeout intervalId
             window.removeEventListener ("keydown", handleKeyListener)
             window.removeEventListener ("beforeunload", unloadHandler)
-            window?cleanupKey <- null
             window?loopTokenKey <- null
+            tryStopTick()
+            window?cleanupKey <- null
 
         and unloadHandler (_: Event) = cleanup ()
 
@@ -159,9 +172,9 @@ let init () =
                 scheduleCountdownCmd () ]
 
 let update msg model =
-    log "Update" $"Processing message: {msg}"
     match msg with
     | CountdownTick ->
+        log "Countdown" "Tick."
         if model.GameRunning then
             model, Cmd.none
         else
@@ -172,15 +185,22 @@ let update msg model =
             else
                 { model with CountdownMs = remaining }, scheduleCountdownCmd ()
     | CountdownFinished ->
+        log "Countdown" "Finished."
         if model.GameRunning || model.CountdownMs > 0 then
             model, Cmd.none
         else
-            tryStopCountdown ()
             let updatedModel = { model with GameRunning = true; CountdownMs = 0 }
-            updatedModel, startLoopCmd model.SpeedMs
-    | Tick when not model.GameRunning -> model, Cmd.none
+            log "Loop" $"Countdown complete. Starting loop at {model.SpeedMs} ms."
+            updatedModel, Cmd.batch [ stopCountdownCmd
+                                      startLoopCmd model.SpeedMs ]
+    | Tick when not model.GameRunning ->
+        tryStopTick ()
+        log "Loop" "Ignoring tick while game is paused."
+        model, Cmd.none
     | Tick ->
+        log "Loop" "Processing tick."
         let nextGame = Game.move model.Game
+
         let updatedHighScore =
             match model.HighScore with
             | Some hs when nextGame.Score > hs.Score ->
@@ -201,7 +221,7 @@ let update msg model =
 
         if nextGame.GameOver then
             log "Game" "Game over detected."
-            updatedModel, Cmd.none
+            { updatedModel with GameRunning = false }, stopLoopCmd
         else
             let collectedLetter = nextGame.Score > model.Game.Score
 
@@ -232,7 +252,8 @@ let update msg model =
                         SpeedMs = newSpeed
                         CountdownMs = 3000
                         GameRunning = false },
-                    Cmd.batch [ scheduleCountdownCmd ()
+                    Cmd.batch [ stopLoopCmd
+                                scheduleCountdownCmd ()
                                 fetchVocabularyCmd ]
                 else
                     log "Game" $"Collected letter at index {nextIndex}."
@@ -242,8 +263,6 @@ let update msg model =
     | ChangeDirection direction -> { model with Game = Game.changeDirection direction model.Game }, Cmd.none
     | Restart ->
         log "Game" "Restart requested."
-        tryCleanupPrevious ()
-        tryStopCountdown ()
         let resetModel =
             { model with
                 Game = Game.restart ()
@@ -257,7 +276,9 @@ let update msg model =
                 GameRunning = false }
 
         resetModel,
-        Cmd.batch [ scheduleCountdownCmd ()
+        Cmd.batch [ stopLoopCmd
+                    stopCountdownCmd
+                    scheduleCountdownCmd ()
                     fetchVocabularyCmd ]
     | SetPlayerName name -> { model with PlayerName = name }, Cmd.none
     | SaveHighScore ->

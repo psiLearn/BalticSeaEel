@@ -23,3 +23,5 @@ npm-debug.log*
 # OS artifacts
 Thumbs.db
 .DS_Store
+
+.fake
