@@ -13,6 +13,7 @@ open Shared.Game
 module JS = Fable.Core.JS
 
 let private cleanupKey = "__eelCleanup"
+let private countdownKey = "__eelCountdown"
 let private highScoreStorageKey = "eel:highscore"
 
 let private log category message = printfn "[Update|%s] %s" category message
@@ -41,6 +42,17 @@ let private writeStoredHighScore (score: HighScore option) =
         | None -> storage.removeItem(highScoreStorageKey)
     with _ -> ()
 
+let private tryStopCountdown () =
+    let countdownObj: obj = window?(countdownKey)
+
+    if not (isNullOrUndefined countdownObj) then
+        match countdownObj with
+        | :? float as id -> window.clearInterval id
+        | :? int as id -> window.clearInterval id
+        | _ -> ()
+
+        window?countdownKey <- null
+
 let private tryCleanupPrevious () =
     let cleanupObj: obj = window?(cleanupKey)
 
@@ -50,6 +62,18 @@ let private tryCleanupPrevious () =
         | _ -> ()
 
         window?cleanupKey <- null
+
+let startCountdownCmd () : Cmd<Msg> =
+    Cmd.ofEffect (fun dispatch ->
+        log "Countdown" "Starting countdown."
+        tryStopCountdown ()
+
+        let intervalId =
+            window.setInterval (
+                (fun _ -> dispatch CountdownTick),
+                1000)
+
+        window?countdownKey <- intervalId)
 
 let startLoopCmd (speedMs: int) : Cmd<Msg> =
     Cmd.ofEffect (fun dispatch ->
@@ -119,11 +143,29 @@ let init () =
     model,
     Cmd.batch [ fetchHighScoreCmd
                 fetchVocabularyCmd
-                startLoopCmd initModel.SpeedMs ]
+                startCountdownCmd () ]
 
 let update msg model =
     log "Update" $"Processing message: {msg}"
     match msg with
+    | CountdownTick ->
+        if model.GameRunning then
+            model, Cmd.none
+        else
+            let remaining = max 0 (model.CountdownMs - 1000)
+            if remaining <= 0 then
+                tryStopCountdown ()
+                { model with CountdownMs = 0 }, Cmd.ofMsg CountdownFinished
+            else
+                { model with CountdownMs = remaining }, Cmd.none
+    | CountdownFinished ->
+        if model.GameRunning then
+            model, Cmd.none
+        else
+            tryStopCountdown ()
+            let updatedModel = { model with GameRunning = true; CountdownMs = 0 }
+            updatedModel, startLoopCmd model.SpeedMs
+    | Tick when not model.GameRunning -> model, Cmd.none
     | Tick ->
         let nextGame = Game.move model.Game
         let updatedHighScore =
@@ -154,6 +196,7 @@ let update msg model =
                 let nextIndex = model.TargetIndex + 1
 
                 if nextIndex >= model.TargetText.Length then
+                    tryCleanupPrevious ()
                     let newSpeed =
                         model.SpeedMs
                         |> float
@@ -173,8 +216,10 @@ let update msg model =
                         TargetIndex = 0
                         Vocabulary = None
                         UseExampleNext = not model.UseExampleNext
-                        SpeedMs = newSpeed },
-                    Cmd.batch [ startLoopCmd newSpeed
+                        SpeedMs = newSpeed
+                        CountdownMs = 3000
+                        GameRunning = false },
+                    Cmd.batch [ startCountdownCmd ()
                                 fetchVocabularyCmd ]
                 else
                     log "Game" $"Collected letter at index {nextIndex}."
@@ -184,6 +229,8 @@ let update msg model =
     | ChangeDirection direction -> { model with Game = Game.changeDirection direction model.Game }, Cmd.none
     | Restart ->
         log "Game" "Restart requested."
+        tryCleanupPrevious ()
+        tryStopCountdown ()
         let resetModel =
             { model with
                 Game = Game.restart ()
@@ -192,10 +239,12 @@ let update msg model =
                 TargetText = ""
                 TargetIndex = 0
                 UseExampleNext = false
-                SpeedMs = initialSpeed }
+                SpeedMs = initialSpeed
+                CountdownMs = 5000
+                GameRunning = false }
 
         resetModel,
-        Cmd.batch [ startLoopCmd resetModel.SpeedMs
+        Cmd.batch [ startCountdownCmd ()
                     fetchVocabularyCmd ]
     | SetPlayerName name -> { model with PlayerName = name }, Cmd.none
     | SaveHighScore ->
