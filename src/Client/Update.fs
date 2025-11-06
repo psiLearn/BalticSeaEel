@@ -172,13 +172,29 @@ let init () =
     model,
     Cmd.batch [ fetchHighScoreCmd
                 fetchVocabularyCmd
-                scheduleCountdownCmd () ]
+                fetchScoresCmd ]
 
 let update msg model =
     match msg with
+    | StartGame when model.ScoresLoading ->
+        log "Game" "Start requested while scores still loading; waiting."
+        model, Cmd.none
+    | StartGame when not model.SplashVisible ->
+        log "Game" "Start requested but splash already dismissed."
+        model, Cmd.none
+    | StartGame ->
+        log "Game" "Start requested from splash screen."
+        let updated =
+            { model with
+                SplashVisible = false
+                CountdownMs = 5000
+                GameRunning = false
+                Error = None
+                ScoresError = None }
+        updated, scheduleCountdownCmd ()
     | CountdownTick ->
         log "Countdown" "Tick."
-        if model.GameRunning then
+        if model.SplashVisible || model.GameRunning then
             model, Cmd.none
         else
             let remaining = max 0 (model.CountdownMs - 1000)
@@ -189,7 +205,7 @@ let update msg model =
                 { model with CountdownMs = remaining }, scheduleCountdownCmd ()
     | CountdownFinished ->
         log "Countdown" "Finished."
-        if model.GameRunning || model.CountdownMs > 0 then
+        if model.SplashVisible || model.GameRunning || model.CountdownMs > 0 then
             model, Cmd.none
         else
             let updatedModel =
@@ -284,8 +300,12 @@ let update msg model =
             { model with
                 Saving = false
                 HighScore = Some sanitized
-                Error = None },
-            Cmd.none
+                Error = None
+                ScoresLoading = true
+                SplashVisible = true
+                CountdownMs = 5000
+                GameRunning = false },
+            fetchScoresCmd
         | None ->
             log "HighScore" "Failed to save high score."
             { model with
@@ -358,3 +378,32 @@ let update msg model =
             |> ensureFoodsForModel
 
         updatedModel, Cmd.none
+    | ScoresLoaded scores ->
+        log "Scores" $"Loaded scoreboard with {scores.Length} entries."
+        let sanitized =
+            scores
+            |> List.map (fun score ->
+                let name = if String.IsNullOrWhiteSpace score.Name then "Anonymous" else score.Name.Trim()
+                { score with Name = name })
+            |> List.sortByDescending (fun score -> score.Score)
+
+        let updatedHigh =
+            match sanitized |> List.tryHead, model.HighScore with
+            | Some top, None -> Some top
+            | Some top, Some current when top.Score > current.Score -> Some top
+            | _ -> model.HighScore
+
+        let updatedModel =
+            { model with
+                Scores = sanitized
+                ScoresLoading = false
+                ScoresError = None
+                HighScore = updatedHigh }
+
+        updatedModel, Cmd.none
+    | ScoresFailed message ->
+        log "Scores" $"Failed to load scoreboard: {message}"
+        { model with
+            ScoresLoading = false
+            ScoresError = Some message },
+        Cmd.none

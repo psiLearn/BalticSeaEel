@@ -17,12 +17,17 @@ type Model =
       SpeedMs: int
       CountdownMs: int
       GameRunning: bool
-      BoardLetters: string array }
+      BoardLetters: string array
+      Scores: HighScore list
+      ScoresLoading: bool
+      ScoresError: string option
+      SplashVisible: bool }
 
 type Msg =
     | Tick
     | CountdownTick
     | CountdownFinished
+    | StartGame
     | ChangeDirection of Direction
     | Restart
     | SetPlayerName of string
@@ -31,6 +36,8 @@ type Msg =
     | HighScoreSaved of HighScore option
     | VocabularyLoaded of VocabularyEntry
     | VocabularyFailed of string
+    | ScoresLoaded of HighScore list
+    | ScoresFailed of string
 
 let defaultVocabularyEntry: VocabularyEntry =
     { Topic = "Mer Baltique"
@@ -70,7 +77,11 @@ let initModel =
       SpeedMs = initialSpeed
       CountdownMs = 5000
       GameRunning = false
-      BoardLetters = createBoardLetters () }
+      BoardLetters = createBoardLetters ()
+      Scores = []
+      ScoresLoading = true
+      ScoresError = None
+      SplashVisible = true }
 
 let nextTargetChar model =
     if model.TargetIndex < model.TargetText.Length then

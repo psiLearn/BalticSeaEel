@@ -1,6 +1,7 @@
 module Tests
 
 open Xunit
+open Elmish
 open Eel.Client.Model
 open Shared
 
@@ -9,12 +10,23 @@ module Update = Eel.Client.Update
 module Loop = Eel.Client.GameLoop
 
 let private withTarget target index =
-    { initModel with TargetText = target; TargetIndex = index }
+    { initModel with
+        TargetText = target
+        TargetIndex = index
+        SplashVisible = false
+        ScoresLoading = false }
 
 let private foodToken position letterIndex status =
     { LetterIndex = letterIndex
       Position = position
       Status = status }
+
+let private cmdHasEffects cmd =
+    match cmd with
+    | [] -> false
+    | _ -> true
+
+let private cmdIsEmpty cmd = not (cmdHasEffects cmd)
 
 [<Fact>]
 let ``nextTargetChar returns current character when index is in range`` () =
@@ -96,7 +108,9 @@ let ``update Tick stops loop when game already over`` () =
         { initModel with
             Game = game
             GameRunning = true
-            HighScore = Some { Name = "A"; Score = 999 } }
+            HighScore = Some { Name = "A"; Score = 999 }
+            SplashVisible = false
+            ScoresLoading = false }
 
     let updated, cmd = Update.update Tick model
 
@@ -124,7 +138,9 @@ let ``update Tick advances target when collecting letter`` () =
             GameRunning = true
             HighScore = Some { Name = "A"; Score = 999 }
             TargetText = "ok"
-            TargetIndex = 0 }
+            TargetIndex = 0
+            SplashVisible = false
+            ScoresLoading = false }
 
     let updated, cmd = Update.update Tick model
 
@@ -148,7 +164,9 @@ let ``applyTick marks game over and requests loop stop`` () =
         { initModel with
             Game = game
             GameRunning = true
-            HighScore = Some { Name = "A"; Score = 25 } }
+            HighScore = Some { Name = "A"; Score = 25 }
+            SplashVisible = false
+            ScoresLoading = false }
 
     let result = Loop.applyTick model
 
@@ -179,7 +197,9 @@ let ``applyTick completes phrase and prepares next round`` () =
             TargetText = "hi"
             TargetIndex = 1
             SpeedMs = 200
-            UseExampleNext = false }
+            UseExampleNext = false
+            SplashVisible = false
+            ScoresLoading = false }
 
     let result = Loop.applyTick model
 
@@ -220,7 +240,9 @@ let ``applyTick emits high score persistence when score improves`` () =
             Game = modelGame
             GameRunning = true
             PlayerName = "  Finn  "
-            HighScore = Some { Name = "A"; Score = 5 } }
+            HighScore = Some { Name = "A"; Score = 5 }
+            SplashVisible = false
+            ScoresLoading = false }
 
     let result = Loop.applyTick model
 
@@ -255,3 +277,62 @@ let ``ensureFoodsForModel spawns multiple upcoming tokens`` () =
     for idx in expectedIndexes do
         Assert.True(model.Game.Foods |> List.exists (fun token -> token.LetterIndex = idx && token.Status = FoodStatus.Active),
                     $"Missing active food for letter index {idx}")
+
+[<Fact>]
+let ``StartGame hides splash and queues countdown`` () =
+    let model =
+        { initModel with
+            SplashVisible = true
+            ScoresLoading = false
+            CountdownMs = 5000 }
+
+    let updated, cmd = Update.update StartGame model
+
+    Assert.False(updated.SplashVisible)
+    Assert.False(updated.GameRunning)
+    Assert.Equal(5000, updated.CountdownMs)
+    Assert.True(cmdHasEffects cmd)
+
+[<Fact>]
+let ``StartGame ignored when splash already hidden`` () =
+    let model =
+        { initModel with
+            SplashVisible = false
+            ScoresLoading = false
+            CountdownMs = 2000 }
+
+    let updated, cmd = Update.update StartGame model
+    Assert.Equal(model, updated)
+    Assert.True(cmdIsEmpty cmd)
+
+[<Fact>]
+let ``ScoresLoaded sorts entries and updates high score`` () =
+    let entries =
+        [ { Name = "Mika"; Score = 15 }
+          { Name = "Ina"; Score = 42 }
+          { Name = ""; Score = 30 } ]
+
+    let model =
+        { initModel with
+            SplashVisible = true
+            ScoresLoading = true
+            HighScore = None }
+
+    let updated, _ = Update.update (ScoresLoaded entries) model
+    Assert.False(updated.ScoresLoading)
+    Assert.Equal(None, updated.ScoresError)
+    Assert.Equal("Ina", updated.Scores.Head.Name)
+    Assert.Equal(42, updated.Scores.Head.Score)
+    Assert.Equal(Some updated.Scores.Head, updated.HighScore)
+
+[<Fact>]
+let ``ScoresFailed records error and stops loading`` () =
+    let model =
+        { initModel with
+            ScoresLoading = true
+            ScoresError = None }
+
+    let updated, _ = Update.update (ScoresFailed "boom") model
+    Assert.False(updated.ScoresLoading)
+    Assert.Equal(Some "boom", updated.ScoresError)
+
