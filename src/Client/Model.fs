@@ -13,10 +13,14 @@ type Model =
       TargetText: string
       TargetIndex: int
       UseExampleNext: bool
-      SpeedMs: int }
+      SpeedMs: int
+      CountdownMs: int
+      GameRunning: bool }
 
 type Msg =
     | Tick
+    | CountdownTick
+    | CountdownFinished
     | ChangeDirection of Direction
     | Restart
     | SetPlayerName of string
@@ -46,7 +50,9 @@ let initModel =
       TargetText = $"{defaultVocabularyEntry.Language1} - {defaultVocabularyEntry.Language2}"
       TargetIndex = 0
       UseExampleNext = false
-      SpeedMs = initialSpeed }
+      SpeedMs = initialSpeed
+      CountdownMs = 5000
+      GameRunning = false }
 
 let nextTargetChar model =
     if model.TargetIndex < model.TargetText.Length then

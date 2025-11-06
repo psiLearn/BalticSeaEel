@@ -80,11 +80,21 @@ let fetchHighScore (_: unit) =
 
             let raw = text |> JS.JSON.parse
 
-            let score =
-                { Name = raw?name |> string
-                  Score = raw?score |> unbox<int> }
+            let nameValue =
+                if isNullOrUndefined raw?name then
+                    "Anonymous"
+                else
+                    let name: string = raw?name
+                    if System.String.IsNullOrWhiteSpace name then "Anonymous" else name
 
-            return Some score
+            let scoreValue =
+                if isNullOrUndefined raw?score then
+                    0
+                else
+                    let score: float = raw?score
+                    score |> System.Math.Round |> int
+
+            return Some { Name = nameValue; Score = scoreValue }
         else
             let status: int = response?status |> unbox<int>
             log "HighScore" $"Request failed with status {status}."

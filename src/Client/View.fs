@@ -46,10 +46,33 @@ let private boardView model =
 
                   yield div [ Key $"{x}-{y}"; ClassName className ] children ]
 
+    let overlay =
+        if not model.GameRunning then
+            let seconds = max 0 ((model.CountdownMs + 999) / 1000)
+            let label = if seconds > 0 then string seconds else "GO!"
+
+            [ div [ ClassName "board-overlay"
+                    Style [ CSSProp.Custom("position", "absolute")
+                            CSSProp.Custom("top", "0")
+                            CSSProp.Custom("left", "0")
+                            CSSProp.Custom("right", "0")
+                            CSSProp.Custom("bottom", "0")
+                            CSSProp.Custom("display", "flex")
+                            CSSProp.Custom("align-items", "center")
+                            CSSProp.Custom("justify-content", "center")
+                            CSSProp.BackgroundColor "rgba(0, 0, 0, 0.6)"
+                            CSSProp.FontSize "3rem"
+                            CSSProp.FontWeight "bold"
+                            CSSProp.Color "#fff" ] ]
+                  [ str label ] ]
+        else
+            []
+
     div
         [ ClassName "board"
-          Style [ CSSProp.GridTemplateColumns $"repeat({Game.boardWidth}, 1fr)" ] ]
-        cells
+          Style [ CSSProp.GridTemplateColumns $"repeat({Game.boardWidth}, 1fr)"
+                  CSSProp.Custom("position", "relative") ] ]
+        (cells @ overlay)
 
 let private statsView model dispatch =
     let highScoreText =
