@@ -1,0 +1,58 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "test:client",
+      "detail": "Run the F# client test suite",
+      "type": "shell",
+      "command": "dotnet",
+      "args": [
+        "test",
+        "tests/Client.Tests/Client.Tests.fsproj"
+      ],
+      "group": {
+        "kind": "test",
+        "isDefault": true
+      },
+      "problemMatcher": "$msCompile",
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      }
+    },
+    {
+      "label": "test:coverage",
+      "detail": "Run tests and produce coverage reports",
+      "type": "shell",
+      "command": "dotnet",
+      "args": [
+        "test",
+        "--settings",
+        "tests/coverlet.runsettings",
+        "--collect:XPlat Code Coverage"
+      ],
+      "group": "test",
+      "problemMatcher": "$msCompile",
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      }
+    },
+    {
+      "label": "test:server",
+      "detail": "Run the server xUnit suite",
+      "type": "shell",
+      "command": "dotnet",
+      "args": [
+        "test",
+        "tests/Server.Tests/Server.Tests.fsproj"
+      ],
+      "group": "test",
+      "problemMatcher": "$msCompile",
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      }
+    }
+  ]
+}

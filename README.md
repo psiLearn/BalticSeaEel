@@ -46,3 +46,18 @@ dotnet publish src/Server/Server.fsproj
 ```
 
 The publish output contains both the compiled server and the static bundle produced by Vite.
+
+## Testing and coverage
+
+```bash
+dotnet test                    # run the xUnit suite
+dotnet test --settings tests/coverlet.runsettings --collect:"XPlat Code Coverage"
+dotnet test tests/Server.Tests/Server.Tests.fsproj   # server-only test run
+```
+
+Coverage reports are emitted to `tests/Client.Tests/TestResults/<run-id>/` in both Cobertura and LCOV formats for use in IDEs or CI tooling.
+
+### VS Code integration
+
+- Install the recommended workspace extensions and open the Testing panel to discover both `Client.Tests` and `Server.Tests`.
+- Use the built-in Test tasks (`test:client`, `test:server`, `test:coverage`) from the command palette (`Tasks: Run Task`) for quick execution inside the editor.
