@@ -11,6 +11,11 @@ module Loop = Eel.Client.GameLoop
 let private withTarget target index =
     { initModel with TargetText = target; TargetIndex = index }
 
+let private foodToken position letterIndex status =
+    { LetterIndex = letterIndex
+      Position = position
+      Status = status }
+
 [<Fact>]
 let ``nextTargetChar returns current character when index is in range`` () =
     let model = withTarget "Eel" 1
@@ -52,7 +57,6 @@ let ``move marks game over when head crosses board boundary`` () =
         { Game.initialState () with
             Eel = [ { X = Game.boardWidth - 1; Y = 3 } ]
             Direction = Direction.Right
-            Food = { X = 0; Y = 0 }
             Score = 0
             GameOver = false }
 
@@ -62,12 +66,13 @@ let ``move marks game over when head crosses board boundary`` () =
 [<Fact>]
 let ``move grows eel and updates score when food is collected`` () =
     let head = { X = 5; Y = 5 }
+    let foodPos = { X = head.X + 1; Y = head.Y }
 
     let state =
         { Game.initialState () with
             Eel = [ head ]
             Direction = Direction.Right
-            Food = { X = head.X + 1; Y = head.Y }
+            Foods = [ foodToken foodPos 0 FoodStatus.Active ]
             Score = 0
             GameOver = false }
 
@@ -77,6 +82,8 @@ let ``move grows eel and updates score when food is collected`` () =
     Assert.Equal(10, next.Score)
     Assert.Equal(head.X + 1, next.Eel.Head.X)
     Assert.Equal(2, next.Eel.Length)
+    let updatedToken = next.Foods |> List.find (fun token -> token.LetterIndex = 0)
+    Assert.Equal(FoodStatus.Collected, updatedToken.Status)
 
 [<Fact>]
 let ``update Tick stops loop when game already over`` () =
@@ -94,19 +101,22 @@ let ``update Tick stops loop when game already over`` () =
     let updated, cmd = Update.update Tick model
 
     Assert.False(updated.GameRunning)
-    Assert.Equal(game, updated.Game)
+    Assert.True(updated.Game.GameOver)
+    Assert.Equal(game.Score, updated.Game.Score)
     Assert.NotEmpty(cmd)
 
 [<Fact>]
 let ``update Tick advances target when collecting letter`` () =
     let head = { X = 5; Y = 5 }
+    let foodPos = { X = head.X + 1; Y = head.Y }
 
     let modelGame =
-        { Eel = [ head ]
-          Direction = Direction.Right
-          Food = { X = head.X + 1; Y = head.Y }
-          Score = 0
-          GameOver = false }
+        { Game.initialState () with
+            Eel = [ head ]
+            Direction = Direction.Right
+            Foods = [ foodToken foodPos 0 FoodStatus.Active ]
+            Score = 0
+            GameOver = false }
 
     let model =
         { initModel with
@@ -122,6 +132,10 @@ let ``update Tick advances target when collecting letter`` () =
     Assert.Equal(1, updated.TargetIndex)
     Assert.Equal("ok", updated.TargetText)
     Assert.Empty(cmd)
+    let collectedToken = updated.Game.Foods |> List.find (fun token -> token.LetterIndex = 0)
+    Assert.Equal(FoodStatus.Collected, collectedToken.Status)
+    Assert.True(updated.Game.Foods |> List.exists (fun token -> token.LetterIndex = 1 && token.Status = FoodStatus.Active))
+    Assert.True(updated.Game.Foods |> List.filter (fun token -> token.Status = FoodStatus.Active) |> List.length <= Loop.maxVisibleFoods)
 
 [<Fact>]
 let ``applyTick marks game over and requests loop stop`` () =
@@ -145,13 +159,18 @@ let ``applyTick marks game over and requests loop stop`` () =
 [<Fact>]
 let ``applyTick completes phrase and prepares next round`` () =
     let head = { X = 2; Y = 2 }
+    let collectedPos = { X = head.X - 1; Y = head.Y }
+    let activePos = { X = head.X + 1; Y = head.Y }
 
     let modelGame =
-        { Eel = [ head ]
-          Direction = Direction.Right
-          Food = { X = head.X + 1; Y = head.Y }
-          Score = 10
-          GameOver = false }
+        { Game.initialState () with
+            Eel = [ head ]
+            Direction = Direction.Right
+            Foods =
+                [ foodToken collectedPos 0 FoodStatus.Collected
+                  foodToken activePos 1 FoodStatus.Active ]
+            Score = 10
+            GameOver = false }
 
     let model =
         { initModel with
@@ -173,6 +192,7 @@ let ``applyTick completes phrase and prepares next round`` () =
     Assert.Contains(Loop.FetchVocabulary, result.Effects)
     Assert.Contains(Loop.ScheduleCountdown, result.Effects)
     Assert.Contains(Loop.StopLoop, result.Effects)
+    Assert.Empty(result.Model.Game.Foods)
 
     let speed =
         match result.Events with
@@ -185,12 +205,15 @@ let ``applyTick completes phrase and prepares next round`` () =
 let ``applyTick emits high score persistence when score improves`` () =
     let head = { X = 1; Y = 1 }
 
+    let activePos = { X = head.X + 1; Y = head.Y }
+
     let modelGame =
-        { Eel = [ head ]
-          Direction = Direction.Right
-          Food = { X = head.X + 1; Y = head.Y }
-          Score = 10
-          GameOver = false }
+        { Game.initialState () with
+            Eel = [ head ]
+            Direction = Direction.Right
+            Foods = [ foodToken activePos 0 FoodStatus.Active ]
+            Score = 10
+            GameOver = false }
 
     let model =
         { initModel with
@@ -207,3 +230,28 @@ let ``applyTick emits high score persistence when score improves`` () =
     | Some (Loop.PersistHighScore (Some hs)) ->
         Assert.Equal(expected.Score, hs.Score)
     | _ -> failwith "Expected PersistHighScore effect"
+
+[<Fact>]
+let ``ensureFoodsForModel spawns multiple upcoming tokens`` () =
+    let head = { X = 3; Y = 3 }
+    let game =
+        { Game.initialState () with
+            Eel = [ head ]
+            Direction = Direction.Right
+            Foods = []
+            Score = 0
+            GameOver = false }
+
+    let model =
+        { initModel with
+            Game = game
+            TargetText = "abcd"
+            TargetIndex = 1 }
+        |> Loop.ensureFoodsForModel
+
+    let expectedIndexes =
+        [ model.TargetIndex .. min (model.TargetText.Length - 1) (model.TargetIndex + Loop.maxVisibleFoods - 1) ]
+
+    for idx in expectedIndexes do
+        Assert.True(model.Game.Foods |> List.exists (fun token -> token.LetterIndex = idx && token.Status = FoodStatus.Active),
+                    $"Missing active food for letter index {idx}")

@@ -62,43 +62,84 @@ let private phraseCompleted (model: Model) (currentGame: GameState) =
         GameRunning = false },
     newSpeed
 
+let maxVisibleFoods = 3
+
+let ensureUpcomingFoods (model: Model) (state: GameState) =
+    if model.TargetText = "" then
+        state
+    else
+        let lastIndex =
+            min (model.TargetText.Length - 1) (model.TargetIndex + maxVisibleFoods - 1)
+
+        if lastIndex < model.TargetIndex then
+            state
+        else
+            [ model.TargetIndex .. lastIndex ]
+            |> List.fold (fun acc idx -> Game.spawnFood idx acc) state
+
+let ensureFoodsForModel (model: Model) =
+    { model with
+        Game = ensureUpcomingFoods model model.Game
+        BoardLetters = ensureBoardLetters model.BoardLetters }
+
 let applyTick (model: Model) : TickResult =
-    let nextGame = Game.move model.Game
+    let movedGame = Game.move model.Game
+
+    let nextLetterIndex = model.TargetIndex + 1
+
+    let withNewSpawn =
+        if movedGame.Score > model.Game.Score && nextLetterIndex < model.TargetText.Length then
+            Game.spawnFood nextLetterIndex movedGame
+        else
+            movedGame
+
+    let ensuredGame =
+        let hasActive =
+            withNewSpawn.Foods |> List.exists (fun token -> token.Status = FoodStatus.Active)
+
+        if not hasActive && model.TargetIndex < model.TargetText.Length then
+            Game.spawnFood model.TargetIndex withNewSpawn
+        else
+            withNewSpawn
 
     let highScore, highScoreEffects =
-        computeHighScore model.PlayerName model.HighScore nextGame
+        computeHighScore model.PlayerName model.HighScore ensuredGame
 
     let baseModel =
         { model with
-            Game = nextGame
+            Game = ensuredGame
             HighScore = highScore }
 
-    if nextGame.GameOver then
-        { Model = { baseModel with GameRunning = false }
-          Events = [ GameOver ]
-          Effects = StopLoop :: highScoreEffects }
-    else
-        let collectedLetter = nextGame.Score > model.Game.Score
-
-        if collectedLetter && model.TargetText.Length > 0 then
-            let nextIndex = model.TargetIndex + 1
-
-            if nextIndex >= model.TargetText.Length then
-                let completedModel, newSpeed = phraseCompleted baseModel nextGame
-
-                { Model = completedModel
-                  Events = [ PhraseCompleted newSpeed ]
-                  Effects =
-                    [ CleanupLoop
-                      StopLoop
-                      ScheduleCountdown
-                      FetchVocabulary ]
-                    @ highScoreEffects }
-            else
-                { Model = { baseModel with TargetIndex = nextIndex }
-                  Events = [ LetterCollected nextIndex ]
-                  Effects = highScoreEffects }
+    let result =
+        if ensuredGame.GameOver then
+            { Model = { baseModel with GameRunning = false }
+              Events = [ GameOver ]
+              Effects = StopLoop :: highScoreEffects }
         else
-            { Model = baseModel
-              Events = []
-              Effects = highScoreEffects }
+            let collectedLetter = movedGame.Score > model.Game.Score
+
+            if collectedLetter && model.TargetText.Length > 0 then
+                let nextIndex = model.TargetIndex + 1
+
+                if nextIndex >= model.TargetText.Length then
+                    let completedModel, newSpeed = phraseCompleted baseModel ensuredGame
+
+                    { Model = completedModel
+                      Events = [ PhraseCompleted newSpeed ]
+                      Effects =
+                        [ CleanupLoop
+                          StopLoop
+                          ScheduleCountdown
+                          FetchVocabulary ]
+                        @ highScoreEffects }
+                else
+                    { Model = { baseModel with TargetIndex = nextIndex }
+                      Events = [ LetterCollected nextIndex ]
+                      Effects = highScoreEffects }
+            else
+                { Model = baseModel
+                  Events = []
+                  Effects = highScoreEffects }
+
+    let ensuredModel = ensureFoodsForModel result.Model
+    { result with Model = ensuredModel }

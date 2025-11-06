@@ -9,12 +9,21 @@ module Game = Shared.Game
 
 let private mkLetterModel () =
     let head = { X = 5; Y = 5 }
+    let token0 =
+        { LetterIndex = 0
+          Position = { X = head.X + 1; Y = head.Y }
+          Status = FoodStatus.Active }
+
+    let token1 =
+        { LetterIndex = 1
+          Position = { X = head.X; Y = head.Y + 1 }
+          Status = FoodStatus.Active }
 
     let game =
         { Game.initialState () with
             Eel = [ head ]
             Direction = Direction.Right
-            Food = { X = head.X + 1; Y = head.Y }
+            Foods = [ token0; token1 ]
             Score = 0
             GameOver = false }
 
@@ -23,6 +32,7 @@ let private mkLetterModel () =
         GameRunning = true
         TargetText = "ok"
         TargetIndex = 0 }
+    |> ensureFoodsForModel
 
 let loopTests =
     testList "Game loop" [
@@ -34,8 +44,23 @@ let loopTests =
             Expect.isFalse (result.Effects |> List.contains StopLoop) "Loop keeps running"
 
         testCase "finishing phrase schedules countdown" <| fun _ ->
-            let model = mkLetterModel ()
-            let progressed = { model with TargetIndex = 1 }
+            let baseModel = mkLetterModel ()
+            let collectedPos = { X = 4; Y = 5 }
+            let activePos = { X = 6; Y = 5 }
+
+            let progressed =
+                { baseModel with
+                    TargetIndex = 1
+                    Game =
+                        { baseModel.Game with
+                            Score = 10
+                            Foods =
+                                [ { LetterIndex = 0
+                                    Position = collectedPos
+                                    Status = FoodStatus.Collected }
+                                  { LetterIndex = 1
+                                    Position = activePos
+                                    Status = FoodStatus.Active } ] } }
 
             let result = applyTick progressed
 

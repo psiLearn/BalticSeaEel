@@ -1,5 +1,6 @@
 module Eel.Client.Model
 
+open System
 open Shared
 open Shared.Game
 
@@ -15,7 +16,8 @@ type Model =
       UseExampleNext: bool
       SpeedMs: int
       CountdownMs: int
-      GameRunning: bool }
+      GameRunning: bool
+      BoardLetters: string array }
 
 type Msg =
     | Tick
@@ -40,6 +42,21 @@ let fallbackTargetText = "Baltc Sea Eel"
 
 let initialSpeed = 200
 
+let boardLetterCount = Game.boardWidth * Game.boardHeight
+
+let private randomSource = Random()
+
+let createBoardLetters () =
+    Array.init boardLetterCount (fun _ ->
+        let value = char (randomSource.Next(0, 26) + int 'A')
+        string value)
+
+let ensureBoardLetters (letters: string array) =
+    if isNull letters || letters.Length <> boardLetterCount then
+        createBoardLetters ()
+    else
+        letters
+
 let initModel =
     { Game = Game.initialState ()
       PlayerName = ""
@@ -52,7 +69,8 @@ let initModel =
       UseExampleNext = false
       SpeedMs = initialSpeed
       CountdownMs = 5000
-      GameRunning = false }
+      GameRunning = false
+      BoardLetters = createBoardLetters () }
 
 let nextTargetChar model =
     if model.TargetIndex < model.TargetText.Length then
