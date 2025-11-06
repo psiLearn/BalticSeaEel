@@ -15,6 +15,7 @@ module JS = Fable.Core.JS
 let private cleanupKey = "__eelCleanup"
 let private countdownKey = "__eelCountdown"
 let private highScoreStorageKey = "eel:highscore"
+let private loopTokenKey = "__eelLoopToken"
 
 let private log category message = printfn "[Update|%s] %s" category message
 
@@ -47,8 +48,12 @@ let private tryStopCountdown () =
 
     if not (isNullOrUndefined countdownObj) then
         match countdownObj with
-        | :? float as id -> window.clearInterval id
-        | :? int as id -> window.clearInterval id
+        | :? float as id ->
+            window.clearInterval id
+            window.clearTimeout id
+        | :? int as id ->
+            window.clearInterval id
+            window.clearTimeout id
         | _ -> ()
 
         window?countdownKey <- null
@@ -62,25 +67,31 @@ let private tryCleanupPrevious () =
         | _ -> ()
 
         window?cleanupKey <- null
+        window?loopTokenKey <- null
 
-let startCountdownCmd () : Cmd<Msg> =
+let scheduleCountdownCmd () : Cmd<Msg> =
     Cmd.ofEffect (fun dispatch ->
-        log "Countdown" "Starting countdown."
         tryStopCountdown ()
-
-        let intervalId =
-            window.setInterval (
+        let timeoutId =
+            window.setTimeout(
                 (fun _ -> dispatch CountdownTick),
                 1000)
-
-        window?countdownKey <- intervalId)
+        window?countdownKey <- timeoutId)
 
 let startLoopCmd (speedMs: int) : Cmd<Msg> =
     Cmd.ofEffect (fun dispatch ->
         log "Loop" $"Starting loop with speed {speedMs} ms."
         tryCleanupPrevious ()
 
-        let intervalId = window.setInterval ((fun _ -> dispatch Tick), speedMs)
+        let loopToken = System.Guid.NewGuid().ToString()
+        window?loopTokenKey <- loopToken
+
+        let intervalId =
+            window.setInterval (
+                (fun _ ->
+                    if window?loopTokenKey = loopToken then
+                        dispatch Tick),
+                speedMs)
 
         let handleKey (ev: KeyboardEvent) =
             let isTypingTarget =
@@ -126,9 +137,11 @@ let startLoopCmd (speedMs: int) : Cmd<Msg> =
         let rec cleanup () =
             log "Loop" "Cleaning up loop and event handlers."
             window.clearInterval intervalId
+            window.clearTimeout intervalId
             window.removeEventListener ("keydown", handleKeyListener)
             window.removeEventListener ("beforeunload", unloadHandler)
             window?cleanupKey <- null
+            window?loopTokenKey <- null
 
         and unloadHandler (_: Event) = cleanup ()
 
@@ -143,7 +156,7 @@ let init () =
     model,
     Cmd.batch [ fetchHighScoreCmd
                 fetchVocabularyCmd
-                startCountdownCmd () ]
+                scheduleCountdownCmd () ]
 
 let update msg model =
     log "Update" $"Processing message: {msg}"
@@ -157,9 +170,9 @@ let update msg model =
                 tryStopCountdown ()
                 { model with CountdownMs = 0 }, Cmd.ofMsg CountdownFinished
             else
-                { model with CountdownMs = remaining }, Cmd.none
+                { model with CountdownMs = remaining }, scheduleCountdownCmd ()
     | CountdownFinished ->
-        if model.GameRunning then
+        if model.GameRunning || model.CountdownMs > 0 then
             model, Cmd.none
         else
             tryStopCountdown ()
@@ -219,7 +232,7 @@ let update msg model =
                         SpeedMs = newSpeed
                         CountdownMs = 3000
                         GameRunning = false },
-                    Cmd.batch [ startCountdownCmd ()
+                    Cmd.batch [ scheduleCountdownCmd ()
                                 fetchVocabularyCmd ]
                 else
                     log "Game" $"Collected letter at index {nextIndex}."
@@ -244,7 +257,7 @@ let update msg model =
                 GameRunning = false }
 
         resetModel,
-        Cmd.batch [ startCountdownCmd ()
+        Cmd.batch [ scheduleCountdownCmd ()
                     fetchVocabularyCmd ]
     | SetPlayerName name -> { model with PlayerName = name }, Cmd.none
     | SaveHighScore ->
@@ -255,18 +268,26 @@ let update msg model =
         elif model.Saving then
             model, Cmd.none
         else
+            let trimmedName = model.PlayerName.Trim()
+            let safeName = if trimmedName = "" then "Anonymous" else trimmedName
             { model with
                 Saving = true
                 Error = None },
-            saveHighScoreCmd model.PlayerName model.Game.Score
+            saveHighScoreCmd safeName model.Game.Score
     | HighScoreSaved result ->
         match result with
         | Some score ->
             log "HighScore" $"High score saved for {score.Name} ({score.Score})."
-            writeStoredHighScore (Some score)
+            let sanitizedName =
+                if String.IsNullOrWhiteSpace score.Name then "Anonymous" else score.Name
+
+            let sanitized =
+                { score with Name = sanitizedName }
+
+            writeStoredHighScore (Some sanitized)
             { model with
                 Saving = false
-                HighScore = Some score
+                HighScore = Some sanitized
                 Error = None },
             Cmd.none
         | None ->
