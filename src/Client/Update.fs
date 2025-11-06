@@ -165,7 +165,9 @@ let startLoopCmd (speedMs: int) : Cmd<Msg> =
 let init () =
     log "Init" "Initializing model and starting commands."
     let storedHighScore = readStoredHighScore () |> Option.orElse initModel.HighScore
-    let model = { initModel with HighScore = storedHighScore }
+    let model =
+        { initModel with HighScore = storedHighScore }
+        |> ensureFoodsForModel
 
     model,
     Cmd.batch [ fetchHighScoreCmd
@@ -190,7 +192,9 @@ let update msg model =
         if model.GameRunning || model.CountdownMs > 0 then
             model, Cmd.none
         else
-            let updatedModel = { model with GameRunning = true; CountdownMs = 0 }
+            let updatedModel =
+                { model with GameRunning = true; CountdownMs = 0 }
+                |> ensureFoodsForModel
             log "Loop" $"Countdown complete. Starting loop at {model.SpeedMs} ms."
             updatedModel, Cmd.batch [ stopCountdownCmd
                                       startLoopCmd model.SpeedMs ]
@@ -242,7 +246,9 @@ let update msg model =
                 UseExampleNext = false
                 SpeedMs = initialSpeed
                 CountdownMs = 5000
-                GameRunning = false }
+                GameRunning = false
+                BoardLetters = createBoardLetters () }
+            |> ensureFoodsForModel
 
         resetModel,
         Cmd.batch [ stopLoopCmd
@@ -325,16 +331,30 @@ let update msg model =
 
         log "Vocabulary" $"Using target phrase '{finalTarget}'."
 
-        { model with
-            Vocabulary = Some entry
-            TargetText = finalTarget
-            TargetIndex = 0
-            Error = None },
-        Cmd.none
+        let resetGame = { model.Game with Foods = [] }
+
+        let updatedModel =
+            { model with
+                Vocabulary = Some entry
+                TargetText = finalTarget
+                TargetIndex = 0
+                Error = None
+                Game = resetGame
+                BoardLetters = createBoardLetters () }
+            |> ensureFoodsForModel
+
+        updatedModel, Cmd.none
     | VocabularyFailed message ->
         log "Vocabulary" $"Failed to load vocabulary: {message}"
-        { model with
-            Error = Some message
-            TargetText = fallbackTargetText
-            TargetIndex = 0 },
-        Cmd.none
+        let resetGame = { model.Game with Foods = [] }
+
+        let updatedModel =
+            { model with
+                Error = Some message
+                TargetText = fallbackTargetText
+                TargetIndex = 0
+                Game = resetGame
+                BoardLetters = createBoardLetters () }
+            |> ensureFoodsForModel
+
+        updatedModel, Cmd.none

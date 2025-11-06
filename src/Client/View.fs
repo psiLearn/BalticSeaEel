@@ -9,9 +9,10 @@ open Shared.Game
 
 let private boardView model =
     let eelCells: Set<Point> = model.Game.Eel |> Set.ofList
-    let foodChar = nextTargetChar model |> Option.map displayChar
     let built, _ = progressParts model
     let builtChars = built |> Seq.toList
+    let nextLetter = nextTargetChar model |> Option.map displayChar
+    let boardWidth = Game.boardWidth
 
     let eelLetterMap =
         (model.Game.Eel, builtChars)
@@ -19,30 +20,57 @@ let private boardView model =
         |> List.map (fun (point, ch) -> point, displayChar ch)
         |> Map.ofList
 
+    let boardLetterFor (point: Point) =
+        let index = point.Y * boardWidth + point.X
+        if index >= 0 && index < model.BoardLetters.Length then
+            model.BoardLetters.[index]
+        else
+            ""
+
+    let foodMap =
+        model.Game.Foods
+        |> List.map (fun token -> token.Position, token)
+        |> Map.ofList
+
+    let tokenLetter token =
+        match token.Status, nextLetter with
+        | FoodStatus.Active, Some letter -> letter
+        | FoodStatus.Active, None -> ""
+        | FoodStatus.Collected, _ ->
+            if token.LetterIndex >= 0 && token.LetterIndex < model.TargetText.Length then
+                displayChar model.TargetText.[token.LetterIndex]
+            else
+                "?"
+
     let cells =
         [ for y in 0 .. Game.boardHeight - 1 do
               for x in 0 .. Game.boardWidth - 1 do
                   let point = { X = x; Y = y }
 
-                  let className =
-                      if Set.contains point eelCells then
-                          "cell eel"
-                      elif point = model.Game.Food then
-                          "cell food"
-                      else
-                          "cell"
+                  let tokenOpt = Map.tryFind point foodMap
 
-                  let children =
-                      if point = model.Game.Food then
-                          match foodChar with
-                          | Some letter -> [ str letter ]
-                          | None -> []
-                      elif Set.contains point eelCells then
-                          match Map.tryFind point eelLetterMap with
-                          | Some letter -> [ str letter ]
-                          | None -> []
+                  let className, children =
+                      if Set.contains point eelCells then
+                          let letterChild =
+                              match Map.tryFind point eelLetterMap with
+                              | Some letter -> [ str letter ]
+                              | None -> []
+
+                          "cell eel", letterChild
                       else
-                          []
+                          match tokenOpt with
+                          | Some token ->
+                              let letter = tokenLetter token
+                              let cls =
+                                  match token.Status with
+                                  | FoodStatus.Active -> "cell food"
+                                  | FoodStatus.Collected -> "cell letter"
+
+                              cls, [ str letter ]
+                          | None ->
+                              let letter = boardLetterFor point
+                              let children = if letter = "" then [] else [ str letter ]
+                              "cell board-letter", children
 
                   yield div [ Key $"{x}-{y}"; ClassName className ] children ]
 

@@ -10,10 +10,19 @@ type Direction =
     | Left
     | Right
 
+type FoodStatus =
+    | Active
+    | Collected
+
+type FoodToken =
+    { LetterIndex: int
+      Position: Point
+      Status: FoodStatus }
+
 type GameState =
     { Eel: Point list
       Direction: Direction
-      Food: Point
+      Foods: FoodToken list
       Score: int
       GameOver: bool }
 
@@ -45,7 +54,7 @@ module Game =
 
         { Eel = start
           Direction = Direction.Right
-          Food = randomPoint start
+          Foods = []
           Score = 0
           GameOver = false }
 
@@ -57,6 +66,9 @@ module Game =
         | Direction.Right -> { head with X = head.X + 1 }
 
     let private collides point eel = eel |> List.exists ((=) point)
+
+    let private occupiedPoints state =
+        state.Eel @ (state.Foods |> List.map (fun token -> token.Position))
 
     let move state =
         if state.GameOver then
@@ -75,7 +87,21 @@ module Game =
             if hitsWall || hitsSelf then
                 { state with GameOver = true }
             else
-                let growing = nextHead = state.Food
+                let hitToken =
+                    state.Foods
+                    |> List.tryFind (fun token -> token.Position = nextHead && token.Status = FoodStatus.Active)
+
+                let foods =
+                    state.Foods
+                    |> List.map (fun token ->
+                        if token.Position = nextHead then
+                            match token.Status with
+                            | FoodStatus.Active -> { token with Status = FoodStatus.Collected }
+                            | _ -> token
+                        else
+                            token)
+
+                let growing = hitToken |> Option.isSome
 
                 let eel =
                     if growing then
@@ -83,12 +109,6 @@ module Game =
                     else
                         nextHead
                         :: (state.Eel |> List.take (state.Eel.Length - 1))
-
-                let food =
-                    if growing then
-                        randomPoint eel
-                    else
-                        state.Food
 
                 let score =
                     if growing then
@@ -98,8 +118,22 @@ module Game =
 
                 { state with
                     Eel = eel
-                    Food = food
+                    Foods = foods
                     Score = score }
+
+    let spawnFood letterIndex state =
+        if state.Foods |> List.exists (fun token -> token.LetterIndex = letterIndex) then
+            state
+        else
+            let occupied = occupiedPoints state
+            let position = randomPoint occupied
+
+            let token =
+                { LetterIndex = letterIndex
+                  Position = position
+                  Status = FoodStatus.Active }
+
+            { state with Foods = state.Foods @ [ token ] }
 
     let changeDirection direction state =
         let isOpposite a b =
