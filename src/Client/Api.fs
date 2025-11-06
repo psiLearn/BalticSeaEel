@@ -20,8 +20,21 @@ let private apiBaseUrl =
     let configured: obj = window?__API_BASE_URL
 
     match configured with
-    | :? string as value when not (String.IsNullOrWhiteSpace value) -> value
-    | _ -> ""
+    | :? string as value when not (String.IsNullOrWhiteSpace value) ->
+        log "Config" $"Using explicit API base URL '{value}'."
+        value
+    | _ ->
+        let location = window.location
+        let origin = location.origin
+
+        if location.port = "5173" then
+            let protocol = if location.protocol = "https:" then "https" else "http"
+            let baseUrl = $"{protocol}://{location.hostname}:5000"
+            log "Config" $"Deriving API base URL '{baseUrl}' for dev server."
+            baseUrl
+        else
+            log "Config" $"Using origin '{origin}' as API base URL."
+            origin
 
 let private combineUrl (baseUrl: string) (path: string) =
     if path.StartsWith("http://") || path.StartsWith("https://") then
@@ -63,7 +76,15 @@ let fetchHighScore (_: unit) =
         if response?ok then
             let! text = response?text () |> unbox<JS.Promise<string>>
             log "HighScore" "Successfully fetched high score."
-            return text |> ofJson<HighScore> |> Some
+            log "HighScore" $"Parsed high score payload: {text}"
+
+            let raw = text |> JS.JSON.parse
+
+            let score =
+                { Name = raw?name |> string
+                  Score = raw?score |> unbox<int> }
+
+            return Some score
         else
             let status: int = response?status |> unbox<int>
             log "HighScore" $"Request failed with status {status}."
