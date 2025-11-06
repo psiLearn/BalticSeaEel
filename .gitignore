@@ -25,4 +25,7 @@ Thumbs.db
 .DS_Store
 
 .fake
+*.fs.js
+fable_modules/
+tests/Client.FableTests/Tests.fs.js
 TestResults/

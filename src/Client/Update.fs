@@ -7,6 +7,7 @@ open Elmish
 open Fable.Core.JsInterop
 open Eel.Client.Model
 open Eel.Client.Api
+open Eel.Client.GameLoop
 open Shared
 open Shared.Game
 
@@ -199,67 +200,35 @@ let update msg model =
         model, Cmd.none
     | Tick ->
         log "Loop" "Processing tick."
-        let nextGame = Game.move model.Game
+        let result = GameLoop.applyTick model
 
-        let updatedHighScore =
-            match model.HighScore with
-            | Some hs when nextGame.Score > hs.Score ->
-                let updated = { hs with Score = nextGame.Score }
-                writeStoredHighScore (Some updated)
-                Some updated
-            | None when nextGame.Score > 0 ->
-                let name = if String.IsNullOrWhiteSpace model.PlayerName then "Anonymous" else model.PlayerName
-                let updated = { Name = name; Score = nextGame.Score }
-                writeStoredHighScore (Some updated)
-                Some updated
-            | _ -> model.HighScore
+        result.Events
+        |> List.iter (function
+            | GameOver -> log "Game" "Game over detected."
+            | LetterCollected idx -> log "Game" $"Collected letter at index {idx}."
+            | PhraseCompleted newSpeed -> log "Game" $"Phrase completed. Speed increased to {newSpeed}.")
 
-        let updatedModel =
-            { model with
-                Game = nextGame
-                HighScore = updatedHighScore }
+        result.Effects
+        |> List.iter (function
+            | CleanupLoop -> tryCleanupPrevious ()
+            | PersistHighScore score -> writeStoredHighScore score
+            | _ -> ())
 
-        if nextGame.GameOver then
-            log "Game" "Game over detected."
-            { updatedModel with GameRunning = false }, stopLoopCmd
-        else
-            let collectedLetter = nextGame.Score > model.Game.Score
+        let commands =
+            result.Effects
+            |> List.choose (function
+                | StopLoop -> Some stopLoopCmd
+                | ScheduleCountdown -> Some (scheduleCountdownCmd ())
+                | FetchVocabulary -> Some fetchVocabularyCmd
+                | _ -> None)
 
-            if collectedLetter && model.TargetText.Length > 0 then
-                let nextIndex = model.TargetIndex + 1
+        let command =
+            match commands with
+            | [] -> Cmd.none
+            | [ single ] -> single
+            | _ -> Cmd.batch commands
 
-                if nextIndex >= model.TargetText.Length then
-                    tryCleanupPrevious ()
-                    let newSpeed =
-                        model.SpeedMs
-                        |> float
-                        |> (*) 0.95
-                        |> int
-                        |> max 50
-
-                    let restartedGame =
-                        Game.restart ()
-                        |> fun g -> { g with Score = nextGame.Score }
-
-                    log "Game" $"Phrase completed. Speed increased to {newSpeed}."
-
-                    { updatedModel with
-                        Game = restartedGame
-                        TargetText = ""
-                        TargetIndex = 0
-                        Vocabulary = None
-                        UseExampleNext = not model.UseExampleNext
-                        SpeedMs = newSpeed
-                        CountdownMs = 3000
-                        GameRunning = false },
-                    Cmd.batch [ stopLoopCmd
-                                scheduleCountdownCmd ()
-                                fetchVocabularyCmd ]
-                else
-                    log "Game" $"Collected letter at index {nextIndex}."
-                    { updatedModel with TargetIndex = nextIndex }, Cmd.none
-            else
-                updatedModel, Cmd.none
+        result.Model, command
     | ChangeDirection direction -> { model with Game = Game.changeDirection direction model.Game }, Cmd.none
     | Restart ->
         log "Game" "Restart requested."

@@ -53,6 +53,18 @@
         "reveal": "always",
         "panel": "dedicated"
       }
+    },
+    {
+      "label": "test:client:fable",
+      "detail": "Run Fable client tests in Node via Mocha",
+      "type": "shell",
+      "command": "npm",
+      "args": [
+        "run",
+        "test:client:fable"
+      ],
+      "group": "test",
+      "problemMatcher": []
     }
   ]
 }
