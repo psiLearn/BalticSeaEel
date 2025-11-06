@@ -5,13 +5,15 @@
     "dev": "vite --config vite.config.mts",
     "build": "vite build --config vite.config.mts",
     "preview": "vite preview --config vite.config.mts",
-    "postinstall": "node ./scripts/fix-ts-lsp-client.cjs"
+    "postinstall": "node ./scripts/fix-ts-lsp-client.cjs",
+    "test:client:fable": "dotnet fable tests/Client.FableTests/Client.FableTests.fsproj --run \"npx mocha tests/Client.FableTests/Tests.fs.js\""
   },
   "dependencies": {
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "mocha": "^11.1.0",
     "vite": "^7.2.0",
     "vite-plugin-fable": "^0.2.0"
   }

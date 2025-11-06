@@ -15,6 +15,8 @@ Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Client.Tests", "tests\Clien
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Server.Tests", "tests\Server.Tests\Server.Tests.fsproj", "{5BCDC51D-4EE8-40DE-93B3-87162214E305}"
 EndProject
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Client.FableTests", "tests\Client.FableTests\Client.FableTests.fsproj", "{71E3CD74-36E5-4B3A-9124-2EDE70411E79}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -85,6 +87,18 @@ Global
 		{5BCDC51D-4EE8-40DE-93B3-87162214E305}.Release|x64.Build.0 = Release|Any CPU
 		{5BCDC51D-4EE8-40DE-93B3-87162214E305}.Release|x86.ActiveCfg = Release|Any CPU
 		{5BCDC51D-4EE8-40DE-93B3-87162214E305}.Release|x86.Build.0 = Release|Any CPU
+		{71E3CD74-36E5-4B3A-9124-2EDE70411E79}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{71E3CD74-36E5-4B3A-9124-2EDE70411E79}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{71E3CD74-36E5-4B3A-9124-2EDE70411E79}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{71E3CD74-36E5-4B3A-9124-2EDE70411E79}.Debug|x64.Build.0 = Debug|Any CPU
+		{71E3CD74-36E5-4B3A-9124-2EDE70411E79}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{71E3CD74-36E5-4B3A-9124-2EDE70411E79}.Debug|x86.Build.0 = Debug|Any CPU
+		{71E3CD74-36E5-4B3A-9124-2EDE70411E79}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{71E3CD74-36E5-4B3A-9124-2EDE70411E79}.Release|Any CPU.Build.0 = Release|Any CPU
+		{71E3CD74-36E5-4B3A-9124-2EDE70411E79}.Release|x64.ActiveCfg = Release|Any CPU
+		{71E3CD74-36E5-4B3A-9124-2EDE70411E79}.Release|x64.Build.0 = Release|Any CPU
+		{71E3CD74-36E5-4B3A-9124-2EDE70411E79}.Release|x86.ActiveCfg = Release|Any CPU
+		{71E3CD74-36E5-4B3A-9124-2EDE70411E79}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -92,5 +106,6 @@ Global
 	GlobalSection(NestedProjects) = preSolution
 		{0C384DB9-83C1-4E43-A113-3FB15F691FD3} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{5BCDC51D-4EE8-40DE-93B3-87162214E305} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
+		{71E3CD74-36E5-4B3A-9124-2EDE70411E79} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 	EndGlobalSection
 EndGlobal

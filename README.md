@@ -53,6 +53,7 @@ The publish output contains both the compiled server and the static bundle produ
 dotnet test                    # run the xUnit suite
 dotnet test --settings tests/coverlet.runsettings --collect:"XPlat Code Coverage"
 dotnet test tests/Server.Tests/Server.Tests.fsproj   # server-only test run
+npm run test:client:fable      # run client tests in a browser-like JS runtime (Fable + Mocha)
 ```
 
 Coverage reports are emitted to `tests/Client.Tests/TestResults/<run-id>/` in both Cobertura and LCOV formats for use in IDEs or CI tooling.
@@ -60,4 +61,4 @@ Coverage reports are emitted to `tests/Client.Tests/TestResults/<run-id>/` in bo
 ### VS Code integration
 
 - Install the recommended workspace extensions and open the Testing panel to discover both `Client.Tests` and `Server.Tests`.
-- Use the built-in Test tasks (`test:client`, `test:server`, `test:coverage`) from the command palette (`Tasks: Run Task`) for quick execution inside the editor.
+- Use the built-in Test tasks (`test:client`, `test:server`, `test:coverage`, `test:client:fable`) from the command palette (`Tasks: Run Task`) for quick execution inside the editor.
