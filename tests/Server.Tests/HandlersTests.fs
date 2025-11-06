@@ -63,3 +63,39 @@ let ``POST /highscore upgrades to higher score`` () =
 
     Assert.Equal(5, stored.Score)
     Assert.Equal("Mika", stored.Name)
+
+[<Fact>]
+let ``GET /scores returns ordered scoreboard`` () =
+    let ctx = createContext ()
+    let store = ctx.RequestServices.GetRequiredService<HighScoreStore>()
+    store.Upsert { Name = "Ina"; Score = 42 } |> ignore
+    store.Upsert { Name = "Tom"; Score = 15 } |> ignore
+
+    let task = HttpHandlers.getScoresHandler noop ctx
+    task.Wait()
+
+    Assert.Equal(StatusCodes.Status200OK, ctx.Response.StatusCode)
+
+    let options = JsonSerializerOptions(PropertyNameCaseInsensitive = true)
+    let body = readBody ctx
+    let decoded = JsonSerializer.Deserialize<HighScore list>(body, options)
+
+    Assert.True(decoded.Length >= 3)
+    let top = decoded.Head
+    Assert.Equal("Ina", top.Name)
+    Assert.Equal(42, top.Score)
+
+[<Fact>]
+let ``Upsert replaces lower score for same player`` () =
+    let store = HighScoreStore()
+    store.Upsert { Name = "Alex"; Score = 10 } |> ignore
+    let first = store.Get()
+    Assert.Equal(10, first.Score)
+
+    store.Upsert { Name = "Alex"; Score = 25 } |> ignore
+    let second = store.Get()
+    Assert.Equal(25, second.Score)
+
+    let all = store.GetAll()
+    let alexEntries = all |> List.filter (fun s -> s.Name = "Alex")
+    Assert.Single(alexEntries)

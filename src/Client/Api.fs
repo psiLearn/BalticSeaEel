@@ -152,6 +152,34 @@ let fetchVocabulary (_: unit) =
             return defaultVocabularyEntry
     }
 
+let fetchScores (_: unit) =
+    promise {
+        log "Scores" "Requesting scoreboard."
+        let! response =
+            fetch "/api/scores" None
+            |> withTimeout 5000
+
+        if response?ok then
+            let! text = response?text () |> unbox<JS.Promise<string>>
+            log "Scores" $"Received scoreboard payload: {text}"
+
+            let entries =
+                text
+                |> JS.JSON.parse
+                |> unbox<HighScore array>
+                |> Array.toList
+                |> List.map (fun score ->
+                    let sanitizedName =
+                        if String.IsNullOrWhiteSpace score.Name then "Anonymous" else score.Name.Trim()
+
+                    { score with Name = sanitizedName })
+
+            return entries
+        else
+            let status: int = response?status |> unbox<int>
+            return raise (Exception $"Failed to fetch scores (status {status}).")
+    }
+
 let fetchHighScoreCmd =
     Cmd.OfPromise.either fetchHighScore () HighScoreLoaded (fun _ -> HighScoreLoaded None)
 
@@ -164,3 +192,6 @@ let fetchVocabularyCmd =
         ()
         VocabularyLoaded
         (fun _ -> defaultVocabularyEntry |> VocabularyLoaded)
+
+let fetchScoresCmd =
+    Cmd.OfPromise.either fetchScores () ScoresLoaded (fun ex -> ScoresFailed(ex.Message))

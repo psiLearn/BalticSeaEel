@@ -31,7 +31,9 @@ let private mkLetterModel () =
         Game = game
         GameRunning = true
         TargetText = "ok"
-        TargetIndex = 0 }
+        TargetIndex = 0
+        SplashVisible = false
+        ScoresLoading = false }
     |> ensureFoodsForModel
 
 let loopTests =

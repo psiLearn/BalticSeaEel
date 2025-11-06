@@ -14,6 +14,13 @@ module HttpHandlers =
             Log.Information("Returning high score {Name} -> {Score}", score.Name, score.Score)
             json score next ctx
 
+    let getScoresHandler: HttpHandler =
+        fun next ctx ->
+            let store = ctx.GetService<HighScoreStore>()
+            let scores = store.GetAll()
+            Log.Information("Returning {Count} scores.", scores.Length)
+            json scores next ctx
+
     let saveHighScoreHandler: HttpHandler =
         fun next ctx ->
             task {
@@ -33,6 +40,7 @@ module HttpHandlers =
 
     let apiRoutes: HttpHandler =
         choose [ GET >=> route "/highscore" >=> getHighScoreHandler
+                 GET >=> route "/scores" >=> getScoresHandler
                  POST >=> route "/highscore" >=> saveHighScoreHandler
                  GET >=> route "/vocabulary" >=> getVocabularyHandler ]
 

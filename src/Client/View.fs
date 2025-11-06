@@ -7,6 +7,22 @@ open Eel.Client.Model
 open Shared
 open Shared.Game
 
+let private scoreboardEntries model =
+    if model.ScoresLoading then
+        [ div [ ClassName "scoreboard-row placeholder" ] [ str "Loading scores..." ] ]
+    elif model.ScoresError |> Option.isSome then
+        [ div [ ClassName "scoreboard-row placeholder" ] [ str (model.ScoresError |> Option.defaultValue "Unable to load scores.") ] ]
+    elif model.Scores.IsEmpty then
+        [ div [ ClassName "scoreboard-row placeholder" ] [ str "No scores yet. Be the first to record a run!" ] ]
+    else
+        model.Scores
+        |> List.mapi (fun idx score ->
+            div [ ClassName "scoreboard-row"; Key $"score-{idx}" ] [
+                span [ ClassName "scoreboard-rank" ] [ str $"{idx + 1}." ]
+                span [ ClassName "scoreboard-name" ] [ str score.Name ]
+                span [ ClassName "scoreboard-value" ] [ str $"{score.Score}" ]
+            ])
+
 let private boardView model =
     let eelCells: Set<Point> = model.Game.Eel |> Set.ofList
     let built, _ = progressParts model
@@ -115,6 +131,20 @@ let private statsView model dispatch =
         | Some letter -> letter
         | None -> ""
 
+    let collectedLetters =
+        model.Game.Foods
+        |> List.filter (fun token -> token.Status = FoodStatus.Collected)
+        |> List.map (fun token ->
+            let letter =
+                if token.LetterIndex >= 0 && token.LetterIndex < model.TargetText.Length then
+                    displayChar model.TargetText.[token.LetterIndex]
+                else
+                    "?"
+
+            div [ ClassName "collected-letter"
+                  Key $"token-{token.Position.X}-{token.Position.Y}-{token.LetterIndex}" ]
+                [ str letter ])
+
     div [ ClassName "sidebar" ] [
         h1 [] [ str "Baltic Sea Eel" ]
         p [] [
@@ -170,6 +200,21 @@ let private statsView model dispatch =
                 str "Restart"
             ]
         ]
+        div [ ClassName "scoreboard" ] (
+            h2 [] [ str "Top Scores" ] :: scoreboardEntries model
+        )
+        if not model.SplashVisible then
+            div [ ClassName "collected-letters-section" ] (
+                [
+                    h3 [] [ str "Collected Letters" ]
+                ]
+                @ (if List.isEmpty collectedLetters then
+                        [ div [ ClassName "collected-letters-empty" ] [ str "Eat food to collect letters." ] ]
+                   else
+                        [ div [ ClassName "collected-letters-grid" ] collectedLetters ])
+            )
+        else
+            fragment [] []
         if model.Game.GameOver then
             div [ ClassName "banner" ] [
                 h2 [] [ str "Game Over" ]
@@ -185,8 +230,37 @@ let private statsView model dispatch =
         | None -> fragment [] []
     ]
 
-let view model dispatch =
-    div [ ClassName "layout" ] [
-        boardView model
-        statsView model dispatch
+let private splashView model dispatch =
+    div [ ClassName "splash-screen" ] [
+        div [ ClassName "splash-content" ] [
+            h1 [] [ str "Dive into the Baltic" ]
+            p [ ClassName "splash-description" ]
+              [ str "Steer the eel, collect letters, and spell each phrase before the tide speeds up." ]
+            div [ ClassName "scoreboard" ] (
+                h2 [] [ str "Top Scores" ] :: scoreboardEntries model
+            )
+            button [
+                ClassName "action large"
+                Disabled model.ScoresLoading
+                OnClick(fun _ -> dispatch StartGame)
+            ] [
+                if model.ScoresLoading then
+                    str "Preparing..."
+                else
+                    str "Start Game"
+            ]
+        ]
     ]
+
+let view model dispatch =
+    let children =
+        [ boardView model
+          statsView model dispatch ]
+
+    let allChildren =
+        if model.SplashVisible then
+            children @ [ splashView model dispatch ]
+        else
+            children
+
+    div [ ClassName "layout" ] allChildren

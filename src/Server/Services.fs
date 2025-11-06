@@ -4,15 +4,37 @@ open System
 open Shared
 
 type HighScoreStore() =
-    let mutable highScore = { Name = "Anonymous"; Score = 0 }
+    let sanitizeName (name: string) =
+        let trimmed =
+            if obj.ReferenceEquals(name, null) then
+                ""
+            else
+                name.Trim()
 
-    member _.Get() = highScore
+        if String.IsNullOrWhiteSpace trimmed then "Anonymous" else trimmed
+
+    let sanitizeScore score = max 0 score
+
+    let mutable scores: HighScore list =
+        [ { Name = "Anonymous"; Score = 0 } ]
+
+    member _.Get() = scores |> List.head
+
+    member _.GetAll() = scores
 
     member _.Upsert candidate =
-        if candidate.Score > highScore.Score then
-            highScore <- candidate
+        let sanitized =
+            { Name = sanitizeName candidate.Name
+              Score = sanitizeScore candidate.Score }
 
-        highScore
+        scores <-
+            sanitized
+            :: (scores
+                |> List.filter (fun existing -> not (String.Equals(existing.Name, sanitized.Name, StringComparison.OrdinalIgnoreCase))))
+            |> List.sortByDescending (fun s -> s.Score)
+            |> List.truncate 10
+
+        scores |> List.head
 
 module Vocabulary =
     let entries: VocabularyEntry list =
