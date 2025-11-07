@@ -15,6 +15,8 @@ type Model =
       TargetIndex: int
       UseExampleNext: bool
       SpeedMs: int
+      PendingMoveMs: int
+      QueuedDirection: Direction option
       CountdownMs: int
       GameRunning: bool
       BoardLetters: string array
@@ -75,6 +77,8 @@ let initModel =
       TargetIndex = 0
       UseExampleNext = false
       SpeedMs = initialSpeed
+      PendingMoveMs = 0
+      QueuedDirection = None
       CountdownMs = 5000
       GameRunning = false
       BoardLetters = createBoardLetters ()

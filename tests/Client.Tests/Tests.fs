@@ -111,6 +111,7 @@ let ``update Tick stops loop when game already over`` () =
             HighScore = Some { Name = "A"; Score = 999 }
             SplashVisible = false
             ScoresLoading = false }
+    let model = { model with PendingMoveMs = model.SpeedMs }
 
     let updated, cmd = Update.update Tick model
 
@@ -141,6 +142,7 @@ let ``update Tick advances target when collecting letter`` () =
             TargetIndex = 0
             SplashVisible = false
             ScoresLoading = false }
+    let model = { model with PendingMoveMs = model.SpeedMs }
 
     let updated, cmd = Update.update Tick model
 
@@ -152,6 +154,99 @@ let ``update Tick advances target when collecting letter`` () =
     Assert.Equal(FoodStatus.Collected, collectedToken.Status)
     Assert.True(updated.Game.Foods |> List.exists (fun token -> token.LetterIndex = 1 && token.Status = FoodStatus.Active))
     Assert.True(updated.Game.Foods |> List.filter (fun token -> token.Status = FoodStatus.Active) |> List.length <= Loop.maxVisibleFoods)
+
+[<Fact>]
+let ``update Tick accumulates pending before movement`` () =
+    let game =
+        { Game.initialState () with
+            Direction = Direction.Right }
+
+    let model =
+        { initModel with
+            Game = game
+            GameRunning = true
+            SplashVisible = false
+            ScoresLoading = false
+            PendingMoveMs = 0 }
+
+    let updated, cmd = Update.update Tick model
+
+    Assert.Equal<Point list>(game.Eel, updated.Game.Eel)
+    Assert.Equal(model.PendingMoveMs + 40, updated.PendingMoveMs)
+    Assert.True(cmdIsEmpty cmd)
+
+[<Fact>]
+let ``update Tick processes multiple moves when accumulator is large`` () =
+    let head = { X = 10; Y = 10 }
+
+    let game =
+        { Game.initialState () with
+            Eel = [ head ]
+            Direction = Direction.Right
+            GameOver = false }
+
+    let model =
+        { initModel with
+            Game = game
+            GameRunning = true
+            SplashVisible = false
+            ScoresLoading = false
+            PendingMoveMs = initModel.SpeedMs * 2 }
+
+    let updated, _ = Update.update Tick model
+    let movedHead = updated.Game.Eel |> List.head
+
+    Assert.True(movedHead.X - head.X >= 2)
+    Assert.True(updated.PendingMoveMs < updated.SpeedMs)
+
+[<Fact>]
+let ``ChangeDirection queues when mid step`` () =
+    let model =
+        { initModel with
+            Game = { Game.initialState () with Direction = Direction.Right }
+            GameRunning = true
+            SplashVisible = false
+            ScoresLoading = false
+            PendingMoveMs = 20 }
+
+    let updated, _ = Update.update (ChangeDirection Direction.Up) model
+
+    Assert.Equal(Direction.Right, updated.Game.Direction)
+    Assert.Equal(Some Direction.Up, updated.QueuedDirection)
+
+[<Fact>]
+let ``queued direction applies after full step`` () =
+    let model =
+        { initModel with
+            Game = { Game.initialState () with Direction = Direction.Right }
+            GameRunning = true
+            SplashVisible = false
+            ScoresLoading = false
+            PendingMoveMs = 10 }
+
+    let queued, _ = Update.update (ChangeDirection Direction.Up) model
+    let ready = { queued with PendingMoveMs = queued.SpeedMs }
+
+    let updated, _ = Update.update Tick ready
+
+    Assert.Equal(Direction.Up, updated.Game.Direction)
+    Assert.Equal(None, updated.QueuedDirection)
+
+[<Fact>]
+let ``ChangeDirection updates immediately when not mid step`` () =
+    let model =
+        { initModel with
+            Game = { Game.initialState () with Direction = Direction.Right }
+            GameRunning = true
+            SplashVisible = false
+            ScoresLoading = false
+            PendingMoveMs = 0 }
+
+    let updated, _ = Update.update (ChangeDirection Direction.Up) model
+
+    Assert.Equal(Direction.Up, updated.Game.Direction)
+    Assert.Equal(None, updated.QueuedDirection)
+
 
 [<Fact>]
 let ``applyTick marks game over and requests loop stop`` () =

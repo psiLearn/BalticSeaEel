@@ -24,17 +24,19 @@ let private scoreboardEntries model =
             ])
 
 let private boardView model =
-    let eelCells: Set<Point> = model.Game.Eel |> Set.ofList
     let built, _ = progressParts model
     let builtChars = built |> Seq.toList
     let nextLetter = nextTargetChar model |> Option.map displayChar
     let boardWidth = Game.boardWidth
-
-    let eelLetterMap =
-        (model.Game.Eel, builtChars)
-        ||> List.zip
-        |> List.map (fun (point, ch) -> point, displayChar ch)
-        |> Map.ofList
+    let boardHeight = Game.boardHeight
+    let cellSize = 26.0
+    let cellGap = 6.0
+    let boardPadding = 18.0
+    let cellStep = cellSize + cellGap
+    let boardInnerWidth =
+        float boardWidth * cellSize + float (boardWidth - 1) * cellGap
+    let boardInnerHeight =
+        float boardHeight * cellSize + float (boardHeight - 1) * cellGap
 
     let boardLetterFor (point: Point) =
         let index = point.Y * boardWidth + point.X
@@ -59,38 +61,31 @@ let private boardView model =
                 "?"
 
     let cells =
-        [ for y in 0 .. Game.boardHeight - 1 do
-              for x in 0 .. Game.boardWidth - 1 do
+        [ for y in 0 .. boardHeight - 1 do
+              for x in 0 .. boardWidth - 1 do
                   let point = { X = x; Y = y }
 
                   let tokenOpt = Map.tryFind point foodMap
 
                   let className, children =
-                      if Set.contains point eelCells then
-                          let letterChild =
-                              match Map.tryFind point eelLetterMap with
-                              | Some letter -> [ str letter ]
-                              | None -> []
+                      match tokenOpt with
+                      | Some token ->
+                          let letter = tokenLetter token
+                          let cls =
+                              match token.Status with
+                              | FoodStatus.Active -> "cell food"
+                              | FoodStatus.Collected -> "cell letter"
 
-                          "cell eel", letterChild
-                      else
-                          match tokenOpt with
-                          | Some token ->
-                              let letter = tokenLetter token
-                              let cls =
-                                  match token.Status with
-                                  | FoodStatus.Active -> "cell food"
-                                  | FoodStatus.Collected -> "cell letter"
-
-                              cls, [ str letter ]
-                          | None ->
-                              let letter = boardLetterFor point
-                              let children = if letter = "" then [] else [ str letter ]
-                              "cell board-letter", children
+                          cls, [ str letter ]
+                      | None ->
+                          let letter = boardLetterFor point
+                          let children = if letter = "" then [] else [ str letter ]
+                          let cls = if letter = "" then "cell" else "cell board-letter"
+                          cls, children
 
                   yield div [ Key $"{x}-{y}"; ClassName className ] children ]
 
-    let overlay =
+    let countdownOverlay =
         if not model.GameRunning then
             let seconds = max 0 ((model.CountdownMs + 999) / 1000)
             let label = if seconds > 0 then string seconds else "GO!"
@@ -112,11 +107,90 @@ let private boardView model =
         else
             []
 
+    let progress =
+        if model.GameRunning && model.SpeedMs > 0 then
+            model.PendingMoveMs
+            |> float
+            |> fun v -> v / float model.SpeedMs
+            |> max 0.0
+            |> min 0.999
+        else
+            0.0
+
+    let futureGame = Game.move model.Game
+    let currentSegments = model.Game.Eel |> List.toArray
+    let futureSegments = futureGame.Eel |> List.toArray
+    let maxSegments = max currentSegments.Length futureSegments.Length
+
+    let eelLetterMap =
+        List.zip model.Game.Eel builtChars
+        |> List.mapi (fun idx (_, ch) -> idx, displayChar ch)
+        |> Map.ofList
+
+    let segmentElements =
+        [ for idx in 0 .. maxSegments - 1 do
+              let currentPoint =
+                  if idx < currentSegments.Length then
+                      currentSegments.[idx]
+                  else
+                      futureSegments.[idx]
+
+              let futurePoint =
+                  if idx < futureSegments.Length then
+                      futureSegments.[idx]
+                  else
+                      currentPoint
+
+              let interpolate currentValue futureValue =
+                  currentValue + (futureValue - currentValue) * progress
+
+              let x =
+                  interpolate (float currentPoint.X) (float futurePoint.X)
+                  * cellStep
+
+              let y =
+                  interpolate (float currentPoint.Y) (float futurePoint.Y)
+                  * cellStep
+
+              let translate = sprintf "translate(%fpx, %fpx)" x y
+
+              let letterChildren =
+                  match Map.tryFind idx eelLetterMap with
+                  | Some letter -> [ str letter ]
+                  | None -> []
+
+              let className = if idx = 0 then "eel-segment head" else "eel-segment"
+
+              yield
+                  div [ Key $"eel-{idx}"
+                        ClassName className
+                        Style [ CSSProp.Position PositionOptions.Absolute
+                                CSSProp.Left "0"
+                                CSSProp.Top "0"
+                                CSSProp.Width (sprintf "%.1fpx" cellSize)
+                                CSSProp.Height (sprintf "%.1fpx" cellSize)
+                                CSSProp.Transform translate ] ]
+                      letterChildren ]
+
+    let eelOverlay =
+        if maxSegments = 0 then
+            []
+        else
+            [ div [ ClassName "eel-overlay"
+                    Style [ CSSProp.Position PositionOptions.Absolute
+                            CSSProp.Left (sprintf "%.1fpx" boardPadding)
+                            CSSProp.Top (sprintf "%.1fpx" boardPadding)
+                            CSSProp.Width (sprintf "%.1fpx" boardInnerWidth)
+                            CSSProp.Height (sprintf "%.1fpx" boardInnerHeight)
+                            CSSProp.PointerEvents "none" ] ]
+                  segmentElements ]
+
     div
         [ ClassName "board"
-          Style [ CSSProp.GridTemplateColumns $"repeat({Game.boardWidth}, 1fr)"
-                  CSSProp.Custom("position", "relative") ] ]
-        (cells @ overlay)
+          Style [ CSSProp.GridTemplateColumns $"repeat({Game.boardWidth}, 26px)"
+                  CSSProp.GridTemplateRows $"repeat({Game.boardHeight}, 26px)"
+                  CSSProp.Position PositionOptions.Relative ] ]
+        (cells @ eelOverlay @ countdownOverlay)
 
 let private statsView model dispatch =
     let highScoreText =
