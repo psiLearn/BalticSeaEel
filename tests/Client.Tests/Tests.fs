@@ -306,6 +306,18 @@ let ``StartGame ignored when splash already hidden`` () =
     Assert.True(cmdIsEmpty cmd)
 
 [<Fact>]
+let ``StartGame ignored while scores still loading`` () =
+    let model =
+        { initModel with
+            SplashVisible = true
+            ScoresLoading = true
+            CountdownMs = 5000 }
+
+    let updated, cmd = Update.update StartGame model
+    Assert.Equal(model, updated)
+    Assert.True(cmdIsEmpty cmd)
+
+[<Fact>]
 let ``ScoresLoaded sorts entries and updates high score`` () =
     let entries =
         [ { Name = "Mika"; Score = 15 }

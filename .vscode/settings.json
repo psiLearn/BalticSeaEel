@@ -1,5 +1,12 @@
 {
   "dotnet-test-explorer.testProjectPath": "tests/**/*.fsproj",
   "dotnet-test-explorer.autoWatch": true,
-  "dotnet-test-explorer.testArguments": ""
+  "dotnet-test-explorer.testArguments": "",
+
+  "mochaExplorer.files": "tests/**/*.fs.js",
+  "mochaExplorer.require": "source-map-support/register",
+  "mochaExplorer.env": {
+    "NODE_ENV": "test"
+  },
+  "mochaExplorer.exec": "npm run test:client:fable"
 }

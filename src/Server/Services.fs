@@ -1,9 +1,121 @@
 namespace Eel.Server.Services
 
 open System
+open System.Collections.Generic
+open System.Data.Common
+open System.Threading
+open Npgsql
 open Shared
 
-type HighScoreStore() =
+type IScoreRepository =
+    abstract member GetScores: unit -> HighScore list
+    abstract member GetTopScore: unit -> HighScore option
+    abstract member UpsertScore: HighScore -> HighScore
+
+type InMemoryScoreRepository() =
+    let mutable storage: Map<string, int> = Map.empty
+    let syncRoot = obj()
+
+    let ordered () =
+        storage
+        |> Seq.map (fun kv -> { Name = kv.Key; Score = kv.Value })
+        |> Seq.sortByDescending (fun score -> score.Score)
+        |> Seq.truncate 10
+        |> Seq.toList
+
+    interface IScoreRepository with
+        member _.GetScores() =
+            lock syncRoot ordered
+
+        member _.GetTopScore() =
+            lock syncRoot (fun () -> ordered () |> List.tryHead)
+
+        member _.UpsertScore score =
+            lock syncRoot (fun () ->
+                let current =
+                    storage
+                    |> Map.tryFind score.Name
+                    |> Option.defaultValue 0
+
+                let value = max current score.Score
+                storage <- storage |> Map.add score.Name value
+                { Name = score.Name; Score = value })
+
+type PostgresScoreRepository(connectionString: string) =
+    let ensureSchema () =
+        use conn = new NpgsqlConnection(connectionString)
+        conn.Open()
+        use cmd = conn.CreateCommand()
+        cmd.CommandText <- """
+            CREATE TABLE IF NOT EXISTS scores (
+                name TEXT PRIMARY KEY,
+                score INTEGER NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS vocabulary (
+                id SERIAL PRIMARY KEY,
+                topic TEXT NOT NULL,
+                language1 TEXT NOT NULL,
+                language2 TEXT NOT NULL,
+                example TEXT NOT NULL
+            );
+        """
+        cmd.ExecuteNonQuery() |> ignore
+
+        use seedScore = conn.CreateCommand()
+        seedScore.CommandText <- "INSERT INTO scores(name, score) VALUES ('Anonymous', 0) ON CONFLICT (name) DO NOTHING;"
+        seedScore.ExecuteNonQuery() |> ignore
+
+    do ensureSchema ()
+
+    let readScores (reader: DbDataReader) =
+        let name = reader.GetString(0)
+        let score = reader.GetInt32(1)
+        { Name = name; Score = score }
+
+    interface IScoreRepository with
+        member _.GetScores() =
+            use conn = new NpgsqlConnection(connectionString)
+            conn.Open()
+            use cmd = conn.CreateCommand()
+            cmd.CommandText <- "SELECT name, score FROM scores ORDER BY score DESC LIMIT 10;"
+            use reader = cmd.ExecuteReader()
+            let scores = ResizeArray()
+            while reader.Read() do
+                scores.Add(readScores reader)
+            scores |> Seq.toList
+
+        member _.GetTopScore() =
+            use conn = new NpgsqlConnection(connectionString)
+            conn.Open()
+            use cmd = conn.CreateCommand()
+            cmd.CommandText <- "SELECT name, score FROM scores ORDER BY score DESC LIMIT 1;"
+            use reader = cmd.ExecuteReader()
+            if reader.Read() then
+                Some (readScores reader)
+            else
+                None
+
+        member _.UpsertScore score =
+            use conn = new NpgsqlConnection(connectionString)
+            conn.Open()
+            use cmd = conn.CreateCommand()
+            cmd.CommandText <- """
+                INSERT INTO scores(name, score)
+                VALUES (@name, @score)
+                ON CONFLICT (name)
+                DO UPDATE SET score = GREATEST(scores.score, EXCLUDED.score)
+                RETURNING name, score;
+            """
+            cmd.Parameters.AddWithValue("@name", score.Name) |> ignore
+            cmd.Parameters.AddWithValue("@score", score.Score) |> ignore
+            use reader = cmd.ExecuteReader()
+            if reader.Read() then
+                readScores reader
+            else
+                score
+
+type HighScoreStore(repository: IScoreRepository) =
     let sanitizeName (name: string) =
         let trimmed =
             if obj.ReferenceEquals(name, null) then
@@ -15,26 +127,21 @@ type HighScoreStore() =
 
     let sanitizeScore score = max 0 score
 
-    let mutable scores: HighScore list =
-        [ { Name = "Anonymous"; Score = 0 } ]
+    let defaultScore = { Name = "Anonymous"; Score = 0 }
 
-    member _.Get() = scores |> List.head
+    member _.Get() = repository.GetTopScore() |> Option.defaultValue defaultScore
 
-    member _.GetAll() = scores
+    member _.GetAll() =
+        match repository.GetScores() with
+        | [] -> [ defaultScore ]
+        | scores -> scores
 
     member _.Upsert candidate =
         let sanitized =
             { Name = sanitizeName candidate.Name
               Score = sanitizeScore candidate.Score }
 
-        scores <-
-            sanitized
-            :: (scores
-                |> List.filter (fun existing -> not (String.Equals(existing.Name, sanitized.Name, StringComparison.OrdinalIgnoreCase))))
-            |> List.sortByDescending (fun s -> s.Score)
-            |> List.truncate 10
-
-        scores |> List.head
+        repository.UpsertScore sanitized
 
 module Vocabulary =
     let entries: VocabularyEntry list =

@@ -29,3 +29,4 @@ Thumbs.db
 fable_modules/
 tests/Client.FableTests/Tests.fs.js
 TestResults/
+postgres-data/

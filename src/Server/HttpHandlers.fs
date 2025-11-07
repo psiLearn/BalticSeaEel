@@ -1,5 +1,4 @@
 namespace Eel.Server
-namespace Eel.Server
 
 open Giraffe
 open Shared
@@ -7,6 +6,7 @@ open Serilog
 open Eel.Server.Services
 
 module HttpHandlers =
+
     let getHighScoreHandler: HttpHandler =
         fun next ctx ->
             let store = ctx.GetService<HighScoreStore>()
@@ -37,13 +37,3 @@ module HttpHandlers =
             let entry = Vocabulary.getRandom ()
             Log.Information("Serving vocabulary topic {Topic}", entry.Topic)
             json entry next ctx
-
-    let apiRoutes: HttpHandler =
-        choose [ GET >=> route "/highscore" >=> getHighScoreHandler
-                 GET >=> route "/scores" >=> getScoresHandler
-                 POST >=> route "/highscore" >=> saveHighScoreHandler
-                 GET >=> route "/vocabulary" >=> getVocabularyHandler ]
-
-    let webApp: HttpHandler =
-        choose [ subRoute "/api" apiRoutes
-                 GET >=> htmlFile "wwwroot/index.html" ]
