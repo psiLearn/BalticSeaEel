@@ -1,0 +1,7 @@
+FROM postgres:15
+
+ENV POSTGRES_USER=eel
+ENV POSTGRES_PASSWORD=eel
+ENV POSTGRES_DB=eel
+
+VOLUME ["/var/lib/postgresql/data"]

@@ -19,28 +19,100 @@ Baltic Sea Eel is a SAFE-stack take on the classic snake formula. Each eel segme
 
 - .NET 8 SDK (`dotnet --version`)
 - Node.js 18+ with npm (`npm --version`)
+- PostgreSQL 15+ (local or containerised). The API reads the connection string from the `POSTGRES_CONNECTION` environment variable; if unset it defaults to `Host=localhost;Port=5432;Username=eel;Password=eel;Database=eel`.
+
+### Local PostgreSQL via Docker
+
+```powershell
+# build the slim postgres image
+docker build -f Dockerfile.postgres -t eel-postgres .
+# run it with a persistent volume in ./postgres-data (bash/zsh)
+docker run -d --name eel-postgres \
+  -p 5432:5432 \
+  -v $(pwd)/postgres-data:/var/lib/postgresql/data \
+  eel-postgres
+
+# PowerShell equivalent
+docker run -d --name eel-postgres `
+  -p 5432:5432 `
+  -v ${PWD}/postgres-data:/var/lib/postgresql/data `
+  eel-postgres
+```
+
+Use the matching connection string (`POSTGRES_CONNECTION="Host=localhost;Port=5432;Username=eel;Password=eel;Database=eel"`) when running the server locally.
+
+### Seeding vocabulary entries
+
+Once the container is running you can seed the `vocabulary` table with the helper script:
+
+```powershell
+# Windows PowerShell
+psql -h localhost -U eel -d eel -f scripts/seed-vocabulary.sql
+
+# macOS/Linux
+psql -h localhost -U eel -d eel -f scripts/seed-vocabulary.sql
+```
+
+For larger CSV batches, run the helper script:
+
+```powershell
+pwsh scripts/import-vocabulary.ps1 `
+  -CsvPath vocabularies/french_vocabularies_balticsea.csv `
+  -Connection "Host=localhost;Port=5432;Username=eel;Password=eel;Database=eel"
+```
+
+To insert a single entry by hand:
+
+```sql
+INSERT INTO vocabulary (topic, language1, language2, example)
+VALUES ('Transport', 'le bateau', 'das Schiff', 'Le bateau part à midi.');
+```
+
+The API still exposes the in-memory fallback list, but any entries in the `vocabulary` table are ready for future use or reporting.
 
 ## Setup
 
-```bash
+```powershell
 npm install
 dotnet tool restore
 ```
 
 The tracked `.gitkeep` keeps `wwwroot` in source control while allowing builds to emit fresh assets; `dist` and `node_modules` remain ignored.
 
+### Description
+
+Baltic Sea Eel pairs a Fable/Elmish client with a Giraffe API to build a vocabulary-focused twist on Snake. The eel’s body spells vocabulary fetched from the server, so collecting food advances letters while the backend keeps a persistent scoreboard in PostgreSQL. The repo includes:
+
+- `src/Client`: Elmish update loop, React view, and integration tests via `npm run test:client:fable`.
+- `src/Server`: Giraffe endpoints, Postgres-backed high-score service, and vocabulary module (currently seeded from F# but ready for DB-backed entries).
+- `tests/`: xUnit suites for both client and server plus Fable/Mocha tests for pure Elmish logic.
+
+With Docker you can spin up the Postgres container locally, seed vocabulary, and run both frontend and backend together via `npm run dev` and `dotnet watch run`.
+
 ## Development
 
-```bash
+```powershell
 npm run dev          # Vite dev server on http://localhost:5173 with API proxying
 dotnet watch run --project src/Server/Server.fsproj
 ```
 
 Browse to the Vite address; requests to `/api/*` are forwarded to `https://localhost:5001` / `http://localhost:5000`.
 
+> **PostgreSQL connection:** when running the server, point it at your database via `POSTGRES_CONNECTION`. Example:
+>
+> ```bash
+> # Windows PowerShell
+> $env:POSTGRES_CONNECTION="Host=localhost;Port=5432;Username=eel;Password=eel;Database=eel"
+> dotnet watch run --project src/Server/Server.fsproj
+>
+> # macOS/Linux
+> export POSTGRES_CONNECTION="Host=localhost;Port=5432;Username=eel;Password=eel;Database=eel"
+> dotnet watch run --project src/Server/Server.fsproj
+> ```
+
 ## Production build
 
-```bash
+```powershell
 npm run build        # bundles client assets into src/Server/wwwroot
 dotnet publish src/Server/Server.fsproj
 ```
@@ -49,7 +121,7 @@ The publish output contains both the compiled server and the static bundle produ
 
 ## Testing and coverage
 
-```bash
+```powershell
 dotnet test                    # run the xUnit suite
 dotnet test --settings tests/coverlet.runsettings --collect:"XPlat Code Coverage"
 dotnet test tests/Server.Tests/Server.Tests.fsproj   # server-only test run
@@ -57,6 +129,22 @@ npm run test:client:fable      # run client tests in a browser-like JS runtime (
 ```
 
 Coverage reports are emitted to `tests/Client.Tests/TestResults/<run-id>/` in both Cobertura and LCOV formats for use in IDEs or CI tooling.
+
+To combine reports from multiple suites (e.g., .NET + mocha/nyc), make each suite export the same format (Cobertura or LCOV) and merge them with [ReportGenerator](https://github.com/danielpalme/ReportGenerator):
+
+```powershell
+# example: merge .NET Cobertura + JS Cobertura
+reportgenerator `
+  "-reports:tests/Client.Tests/TestResults/**/coverage.cobertura.xml;path/to/js/coverage.cobertura.xml" `
+  "-targetdir:coveragereport" `
+  "-reporttypes:Html"
+```
+
+For JS/Fable tests, wrap `npm run test:client:fable` with [nyc](https://github.com/istanbuljs/nyc) or another coverage runner so it emits LCOV/Cobertura files that the merge step can consume.
+
+### API documentation
+
+Swagger/OpenAPI is generated automatically via [Giraffe.OpenApi](https://github.com/giraffe-fsharp/Giraffe.OpenApi). When the server runs in development mode, browse to `https://localhost:5001/swagger` (or `http://localhost:5000/swagger`) to inspect the live contract.
 
 ### VS Code integration
 
