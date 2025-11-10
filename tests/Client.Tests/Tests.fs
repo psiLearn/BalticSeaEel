@@ -458,3 +458,28 @@ let ``ScoresFailed records error and stops loading`` () =
     Assert.False(updated.ScoresLoading)
     Assert.Equal(Some "boom", updated.ScoresError)
 
+[<Fact>]
+let ``initModel speed honors config`` () =
+    Assert.Equal(Config.gameplay.InitialSpeedMs, initModel.SpeedMs)
+
+[<Fact>]
+let ``ensureFoodsForModel seeds up to configured maximum`` () =
+    let target = "ABCDE"
+
+    let seeded =
+        { initModel with
+            TargetText = target
+            TargetIndex = 0
+            SplashVisible = false
+            ScoresLoading = false
+            Game = Game.initialState () }
+        |> Loop.ensureFoodsForModel
+
+    let active =
+        seeded.Game.Foods
+        |> List.filter (fun token -> token.Status = FoodStatus.Active)
+        |> List.sortBy (fun token -> token.LetterIndex)
+
+    let expectedCount = min Config.gameplay.MaxVisibleFoods target.Length
+    Assert.Equal(expectedCount, active.Length)
+    Assert.Equal< int list >([0 .. expectedCount - 1], active |> List.map (fun token -> token.LetterIndex))

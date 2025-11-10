@@ -53,7 +53,7 @@ module Game =
                 Y = boardHeight / 2 } ]
 
         { Eel = start
-          Direction = Direction.Right
+          Direction = Direction.Left
           Foods = []
           Score = 0
           GameOver = false }
