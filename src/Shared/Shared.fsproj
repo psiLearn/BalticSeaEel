@@ -5,6 +5,7 @@
     <DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="Config.fs" />
     <Compile Include="Vocabulary.fs" />
     <Compile Include="Game.fs" />
   </ItemGroup>

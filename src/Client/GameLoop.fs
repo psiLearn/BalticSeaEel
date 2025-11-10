@@ -62,7 +62,7 @@ let private phraseCompleted (model: Model) (currentGame: GameState) =
         GameRunning = false },
     newSpeed
 
-let maxVisibleFoods = 3
+let maxVisibleFoods = Config.gameplay.MaxVisibleFoods
 
 let ensureUpcomingFoods (model: Model) (state: GameState) =
     if model.TargetText = "" then

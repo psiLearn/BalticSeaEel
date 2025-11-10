@@ -70,34 +70,40 @@ let private withTimeout timeoutMs (promise: JS.Promise<'T>) : JS.Promise<'T> =
 
 let fetchHighScore (_: unit) =
     promise {
-        log "HighScore" "Requesting current high score."
-        let! response = fetch "/api/highscore" None
+        try
+            log "HighScore" "Requesting current high score."
+            let! response =
+                fetch "/api/highscore" None
+                |> withTimeout 5000
 
-        if response?ok then
-            let! text = response?text () |> unbox<JS.Promise<string>>
-            log "HighScore" "Successfully fetched high score."
-            log "HighScore" $"Parsed high score payload: {text}"
+            if response?ok then
+                let! text = response?text () |> unbox<JS.Promise<string>>
+                log "HighScore" "Successfully fetched high score."
+                log "HighScore" $"Parsed high score payload: {text}"
 
-            let raw = text |> JS.JSON.parse
+                let raw = text |> JS.JSON.parse
 
-            let nameValue =
-                if isNullOrUndefined raw?name then
-                    "Anonymous"
-                else
-                    let name: string = raw?name
-                    if System.String.IsNullOrWhiteSpace name then "Anonymous" else name
+                let nameValue =
+                    if isNullOrUndefined raw?name then
+                        "Anonymous"
+                    else
+                        let name: string = raw?name
+                        if System.String.IsNullOrWhiteSpace name then "Anonymous" else name
 
-            let scoreValue =
-                if isNullOrUndefined raw?score then
-                    0
-                else
-                    let score: float = raw?score
-                    score |> System.Math.Round |> int
+                let scoreValue =
+                    if isNullOrUndefined raw?score then
+                        0
+                    else
+                        let score: float = raw?score
+                        score |> System.Math.Round |> int
 
-            return Some { Name = nameValue; Score = scoreValue }
-        else
-            let status: int = response?status |> unbox<int>
-            log "HighScore" $"Request failed with status {status}."
+                return Some { Name = nameValue; Score = scoreValue }
+            else
+                let status: int = response?status |> unbox<int>
+                log "HighScore" $"Request failed with status {status}."
+                return None
+        with ex ->
+            log "HighScore" $"Request failed: {ex.Message}"
             return None
     }
 

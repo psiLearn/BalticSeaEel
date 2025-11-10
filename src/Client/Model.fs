@@ -50,7 +50,7 @@ let defaultVocabularyEntry: VocabularyEntry =
 
 let fallbackTargetText = "Baltc Sea Eel"
 
-let initialSpeed = 200
+let initialSpeed = Config.gameplay.InitialSpeedMs
 
 let boardLetterCount = Game.boardWidth * Game.boardHeight
 

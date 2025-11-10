@@ -30,10 +30,11 @@ let private reactUseEffect (callback: unit -> unit) (deps: obj array) : unit = j
 let private boardPixelSize dimension =
     (float dimension * cellStep) - cellGap + (2.0 * canvasPadding)
 
-let private drawRotatedText (ctx: CanvasRenderingContext2D) text x y =
+let private drawLetter (ctx: CanvasRenderingContext2D) text x y rotation =
     ctx?save()
     ctx?translate(x + cellSize / 2., y + cellSize / 2.)
-    ctx?rotate(Math.PI)
+    if rotation <> 0.0 then
+        ctx?rotate(rotation)
     ctx?fillStyle <- "#e6ecec"
     ctx.font <- "bold 14px 'Segoe UI'"
     ctx?textAlign <- "center"
@@ -108,14 +109,14 @@ let private drawBoard (canvas: HTMLCanvasElement) (model: Model) =
                     ctx.beginPath()
                     ctx.arc (drawX + cellSize / 2., drawY + cellSize / 2., cellSize / 2.6, 0., Math.PI * 2.)
                     ctx.fill()
-                    if letter <> "" then drawRotatedText ctx letter drawX drawY
+                    if letter <> "" then drawLetter ctx letter drawX drawY 0.0
                 | FoodStatus.Collected ->
                     ctx?fillStyle <- "rgba(255,255,255,0.15)"
                     ctx.fillRect (drawX, drawY, cellSize, cellSize)
-                    if letter <> "" then drawRotatedText ctx letter drawX drawY
+                    if letter <> "" then drawLetter ctx letter drawX drawY 0.0
             | None ->
                 let letter = boardLetterFor point
-                if letter <> "" then drawRotatedText ctx letter drawX drawY
+                if letter <> "" then drawLetter ctx letter drawX drawY 0.0
 
     let built, _ = progressParts model
     let builtChars = built |> Seq.toList
@@ -184,8 +185,8 @@ let private drawBoard (canvas: HTMLCanvasElement) (model: Model) =
         ctx.restore()
 
         match Map.tryFind idx assignedLetters with
-        | Some letter when not (String.IsNullOrWhiteSpace letter) -> drawRotatedText ctx letter x y
-        | _ -> if idx <> maxSegments - 1 then drawRotatedText ctx (fallbackLetter curr) x y
+        | Some letter when not (String.IsNullOrWhiteSpace letter) -> drawLetter ctx letter x y rotation
+        | _ -> if idx <> maxSegments - 1 then drawLetter ctx (fallbackLetter curr) x y rotation
 
 let private boardCanvas =
     FunctionComponent.Of(
@@ -241,7 +242,35 @@ let private countdownOverlay model =
         []
 
 let private boardView model =
-    div [ ClassName "board" ] (boardCanvas model :: countdownOverlay model)
+    let collectedLetters =
+        if String.IsNullOrEmpty model.TargetText then
+            []
+        else
+            let builtLength = min model.TargetIndex model.TargetText.Length
+
+            model.TargetText.Substring(0, builtLength)
+            |> Seq.mapi (fun idx ch ->
+                div [ ClassName "collected-letter"
+                      Key $"collected-{idx}-{ch}" ]
+                    [ str (displayChar ch) ])
+            |> Seq.toList
+
+    let collectedSection =
+        if model.SplashVisible then
+            fragment [] []
+        else
+            let body =
+                if List.isEmpty collectedLetters then
+                    [ div [ ClassName "collected-letters-empty" ] [ str "Eat food to collect letters." ] ]
+                else
+                    [ div [ ClassName "collected-letters-grid" ] collectedLetters ]
+
+            div [ ClassName "collected-letters-section board-collected" ]
+                (h3 [] [ str "Collected Letters" ] :: body)
+
+    div [ ClassName "board-wrapper" ]
+        [ div [ ClassName "board" ] (boardCanvas model :: countdownOverlay model)
+          collectedSection ]
 
 let private scoreboardEntries model =
     if model.ScoresLoading then
@@ -271,20 +300,6 @@ let private statsView model dispatch =
         match nextTargetChar model |> Option.map displayChar with
         | Some letter -> letter
         | None -> ""
-
-    let collectedLetters =
-        model.Game.Foods
-        |> List.filter (fun token -> token.Status = FoodStatus.Collected)
-        |> List.map (fun token ->
-            let letter =
-                if token.LetterIndex >= 0 && token.LetterIndex < model.TargetText.Length then
-                    displayChar model.TargetText.[token.LetterIndex]
-                else
-                    "?"
-
-            div [ ClassName "collected-letter"
-                  Key $"token-{token.Position.X}-{token.Position.Y}-{token.LetterIndex}" ]
-                [ str letter ])
 
     div [ ClassName "sidebar" ] [
         h1 [] [ str "Baltic Sea Eel" ]
@@ -325,14 +340,6 @@ let private statsView model dispatch =
                      OnClick(fun _ -> dispatch Restart) ] [ str "Restart" ]
         ]
         div [ ClassName "scoreboard" ] (h2 [] [ str "Top Scores" ] :: scoreboardEntries model)
-        if not model.SplashVisible then
-            div [ ClassName "collected-letters-section" ] (
-                [ h3 [] [ str "Collected Letters" ] ] @
-                (if List.isEmpty collectedLetters then
-                     [ div [ ClassName "collected-letters-empty" ] [ str "Eat food to collect letters." ] ]
-                 else
-                     [ div [ ClassName "collected-letters-grid" ] collectedLetters ]))
-        else fragment [] []
         if model.Game.GameOver then
             div [ ClassName "banner" ] [
                 h2 [] [ str "Game Over" ]
