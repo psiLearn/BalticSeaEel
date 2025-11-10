@@ -5,12 +5,14 @@
     "dev": "vite --config vite.config.mts",
     "build": "vite build --config vite.config.mts",
     "preview": "vite preview --config vite.config.mts",
-    "postinstall": "node ./scripts/fix-ts-lsp-client.cjs",
+    "postinstall": "node ./scripts/fix-ts-lsp-client.cjs && node ./scripts/remove-react-native-shim.cjs",
     "test:client:fable": "dotnet fable tests/Client.FableTests/Client.FableTests.fsproj --run \"npx mocha tests/Client.FableTests/Tests.fs.js\""
   },
   "dependencies": {
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react": "18.2.0",
+    "react-dom": "18.2.0",
+    "react-native": "^0.82.1",
+    "react-native-web": "^0.19.13"
   },
   "devDependencies": {
     "mocha": "^11.1.0",
