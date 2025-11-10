@@ -77,6 +77,8 @@ body {
   display: flex;
   gap: 3rem;
   padding: 2.5rem;
+  width: min(1100px, calc(100vw - 3rem));
+  min-height: clamp(640px, 80vh, 820px);
   background: var(--color-panel-bg);
   border-radius: 24px;
   box-shadow: 0 24px 60px var(--color-panel-shadow);
@@ -84,14 +86,64 @@ body {
   position: relative;
 }
 
+.layout-splash {
+  width: min(920px, calc(100vw - 2rem));
+  min-height: clamp(520px, 85vh, 780px);
+}
+
+.layout-splash .splash-screen {
+  position: relative;
+  inset: unset;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+}
+
+.layout-splash .splash-content {
+  width: 100%;
+  max-width: none;
+  min-height: clamp(420px, 60vh, 640px);
+  gap: 2rem;
+  padding: clamp(2rem, 4vw, 3.5rem);
+}
+
+.layout-splash .splash-content h1 {
+  font-size: clamp(2.4rem, 6vw, 3.2rem);
+}
+
+.layout-splash .splash-description {
+  font-size: 1.05rem;
+}
+
+.layout-splash .splash-scores {
+  max-height: 220px;
+  overflow-y: auto;
+}
+
 .board {
-  display: grid;
-  gap: 6px;
+  display: inline-block;
   padding: 18px;
   background: linear-gradient(145deg, var(--color-board-grad-start), var(--color-board-grad-end));
   border-radius: 20px;
   box-shadow: inset 0 0 0 1px var(--color-board-border), inset 0 12px 24px var(--color-board-shadow);
   position: relative;
+}
+
+.board-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: clamp(2.2rem, 6vw, 3.2rem);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: rgba(230, 236, 236, 0.9);
+  text-shadow: 0 8px 25px rgba(0, 0, 0, 0.6);
+  background: radial-gradient(circle, rgba(8, 18, 22, 0.45), rgba(8, 18, 22, 0.75));
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 5;
 }
 
 .eel-overlay {
@@ -108,14 +160,29 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-weight: 600;
-  font-size: 0.95rem;
+  font-weight: 700;
+  font-size: 1.1rem;
   color: var(--color-text-main);
   transition: transform 0.04s linear;
 }
 
 .eel-segment.head {
-  box-shadow: inset 0 0 8px var(--color-eel-shadow), 0 0 10px rgba(0, 0, 0, 0.45);
+  box-shadow: inset 0 0 10px var(--color-eel-shadow), 0 0 12px rgba(0, 0, 0, 0.55);
+}
+
+.eel-segment.tail {
+  border-radius: 50% 50% 0 0;
+  clip-path: polygon(0% 0%, 100% 0%, 70% 50%, 100% 100%, 0% 100%, 30% 50%);
+  transform: rotate(-90deg);
+}
+
+.board-canvas {
+  display: block;
+}
+
+.rotated-text {
+  display: inline-block;
+  transform: rotate(0deg);
 }
 
 .cell {
@@ -343,12 +410,12 @@ body {
 }
 
 .splash-content {
-  max-width: 440px;
+  max-width: 520px;
   width: 100%;
-  padding: 2.5rem;
-  border-radius: 20px;
-  background: rgba(10, 26, 31, 0.92);
-  box-shadow: 0 30px 60px rgba(0, 0, 0, 0.45);
+  padding: 2.75rem;
+  border-radius: 24px;
+  background: rgba(10, 26, 31, 0.95);
+  box-shadow: 0 30px 70px rgba(0, 0, 0, 0.5);
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
@@ -370,5 +437,17 @@ body {
   .layout {
     flex-direction: column;
     align-items: center;
+    width: calc(100vw - 1.5rem);
+    padding: 1.5rem;
+    gap: 2rem;
+  }
+
+  .layout-splash {
+    width: calc(100vw - 1.5rem);
+    min-height: calc(100vh - 2rem);
+  }
+
+  .splash-content {
+    padding: 2rem;
   }
 }

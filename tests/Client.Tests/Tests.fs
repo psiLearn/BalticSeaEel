@@ -176,7 +176,7 @@ let ``update Tick accumulates pending before movement`` () =
     Assert.True(cmdIsEmpty cmd)
 
 [<Fact>]
-let ``update Tick processes multiple moves when accumulator is large`` () =
+let ``update Tick performs at most one move per frame`` () =
     let head = { X = 10; Y = 10 }
 
     let game =
@@ -196,7 +196,7 @@ let ``update Tick processes multiple moves when accumulator is large`` () =
     let updated, _ = Update.update Tick model
     let movedHead = updated.Game.Eel |> List.head
 
-    Assert.True(movedHead.X - head.X >= 2)
+    Assert.Equal(head.X + 1, movedHead.X)
     Assert.True(updated.PendingMoveMs < updated.SpeedMs)
 
 [<Fact>]
@@ -233,7 +233,7 @@ let ``queued direction applies after full step`` () =
     Assert.Equal(None, updated.QueuedDirection)
 
 [<Fact>]
-let ``ChangeDirection updates immediately when not mid step`` () =
+let ``ChangeDirection applies immediately when aligned`` () =
     let model =
         { initModel with
             Game = { Game.initialState () with Direction = Direction.Right }
@@ -246,6 +246,21 @@ let ``ChangeDirection updates immediately when not mid step`` () =
 
     Assert.Equal(Direction.Up, updated.Game.Direction)
     Assert.Equal(None, updated.QueuedDirection)
+
+[<Fact>]
+let ``ChangeDirection queues while mid step`` () =
+    let midModel =
+        { initModel with
+            Game = { Game.initialState () with Direction = Direction.Right }
+            GameRunning = true
+            SplashVisible = false
+            ScoresLoading = false
+            PendingMoveMs = initModel.SpeedMs / 2 }
+
+    let updated, _ = Update.update (ChangeDirection Direction.Up) midModel
+
+    Assert.Equal(Direction.Right, updated.Game.Direction)
+    Assert.Equal(Some Direction.Up, updated.QueuedDirection)
 
 
 [<Fact>]
