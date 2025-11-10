@@ -19,13 +19,14 @@ if (-not (Test-Path $CsvPath)) {
 }
 
 $parts = Parse-ConnectionString $Connection
-$host = $parts["Host"]
+
+$pgHost = $parts["Host"]
 $port = $parts["Port"]
 $user = $parts["Username"]
 $password = $parts["Password"]
 $database = $parts["Database"]
 
-if (-not $host -or -not $user -or -not $database) {
+if (-not $pgHost -or -not $user -or -not $database) {
     throw "Connection string must include Host, Username, Password, and Database."
 }
 
@@ -33,12 +34,12 @@ if (-not $port) { $port = "5432" }
 
 $resolvedCsv = (Resolve-Path $CsvPath).Path
 
-Write-Host "Importing vocabulary from $resolvedCsv into $database@$host..."
+Write-Host "Importing vocabulary from $resolvedCsv into $database@$pgHost..."
 
 $env:PGPASSWORD = $password
 try {
     $copyCommand = "\copy vocabulary(topic, language1, language2, example) FROM '$resolvedCsv' WITH (FORMAT csv, HEADER true)"
-    psql -h $host -p $port -U $user -d $database -c $copyCommand
+    psql -h $pgHost -p $port -U $user -d $database -c $copyCommand
 }
 finally {
     Remove-Item Env:\PGPASSWORD -ErrorAction SilentlyContinue
