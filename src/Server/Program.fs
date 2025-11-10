@@ -40,18 +40,22 @@ builder.Services
     .AddOptions<JsonSerializerOptions>()
     .Configure(fun options ->
         options.PropertyNameCaseInsensitive <- true
+        options.PropertyNamingPolicy <- JsonNamingPolicy.CamelCase
         options.Converters.Add(JsonFSharpConverter()))
 |> ignore
 
-let serializerFactory =
-    Func<IServiceProvider, Giraffe.Json.ISerializer>(fun sp ->
-        let options = sp.GetRequiredService<IOptionsSnapshot<JsonSerializerOptions>>().Value
-        let serializer = Giraffe.Json.Serializer(options)
-        if obj.ReferenceEquals(serializer, null) then
-            invalidOp "Failed to configure JSON serializer."
-        serializer :> Giraffe.Json.ISerializer)
+let createSerializer (options: JsonSerializerOptions) =
+    let serializer = Giraffe.Json.Serializer(options)
+    if obj.ReferenceEquals(serializer, null) then
+        invalidOp "Failed to configure JSON serializer."
+    serializer
 
-builder.Services.AddScoped<Giraffe.Json.ISerializer>(serializerFactory) |> ignore
+let serializerFactory =
+    Func<IServiceProvider, obj>(fun sp ->
+        let options = sp.GetRequiredService<IOptionsSnapshot<JsonSerializerOptions>>().Value
+        createSerializer options :> obj)
+
+builder.Services.AddScoped(typeof<Giraffe.Json.ISerializer>, serializerFactory) |> ignore
 builder.Services.AddSingleton<IScoreRepository>(fun _ -> PostgresScoreRepository(connectionString) :> IScoreRepository) |> ignore
 builder.Services.AddSingleton<HighScoreStore>() |> ignore
 builder.Services.AddCors(fun options ->

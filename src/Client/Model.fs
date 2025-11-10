@@ -17,6 +17,7 @@ type Model =
       SpeedMs: int
       PendingMoveMs: int
       QueuedDirection: Direction option
+      LastEel: Point list
       CountdownMs: int
       GameRunning: bool
       BoardLetters: string array
@@ -55,9 +56,19 @@ let boardLetterCount = Game.boardWidth * Game.boardHeight
 
 let private randomSource = Random()
 
+let private letterPool: char array =
+    [| yield ' '
+       yield '-'
+       yield '\''
+       yield! [ 'A' .. 'Z' ]
+       yield! [ 'a' .. 'z' ]
+       yield! [ 'À'; 'Á'; 'Â'; 'Ã'; 'Ä'; 'Å'; 'Æ'; 'Ç'; 'È'; 'É'; 'Ê'; 'Ë'; 'Ì'; 'Í'; 'Î'; 'Ï'; 'Ñ'; 'Ò'; 'Ó'; 'Ô'; 'Õ'; 'Ö'; 'Ø'; 'Ù'; 'Ú'; 'Û'; 'Ü'; 'Ý'; 'ß'; 'à'; 'á'; 'â'; 'ã'; 'ä'; 'å'; 'æ'; 'ç'; 'è'; 'é'; 'ê'; 'ë'; 'ì'; 'í'; 'î'; 'ï'; 'ñ'; 'ò'; 'ó'; 'ô'; 'õ'; 'ö'; 'ø'; 'ù'; 'ú'; 'û'; 'ü'; 'ý'; 'ÿ' ] |]
+
 let createBoardLetters () =
+    let maxIndex = letterPool.Length
+
     Array.init boardLetterCount (fun _ ->
-        let value = char (randomSource.Next(0, 26) + int 'A')
+        let value = letterPool.[randomSource.Next(maxIndex)]
         string value)
 
 let ensureBoardLetters (letters: string array) =
@@ -79,6 +90,7 @@ let initModel =
       SpeedMs = initialSpeed
       PendingMoveMs = 0
       QueuedDirection = None
+      LastEel = (Game.initialState ()).Eel
       CountdownMs = 5000
       GameRunning = false
       BoardLetters = createBoardLetters ()

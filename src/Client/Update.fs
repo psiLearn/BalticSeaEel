@@ -91,6 +91,19 @@ let scheduleCountdownCmd () : Cmd<Msg> =
 let private stopCountdownCmd : Cmd<Msg> =
     Cmd.ofEffect (fun _ -> tryStopCountdown ())
 
+let private withFreshLastEel (model: Model) =
+    { model with LastEel = model.Game.Eel }
+
+let private movementProgress model =
+    if model.GameRunning && model.SpeedMs > 0 then
+        model.PendingMoveMs
+        |> float
+        |> fun v -> v / float model.SpeedMs
+        |> max 0.0
+        |> min 0.999
+    else
+        0.0
+
 let private handleTickResult (result: GameLoop.TickResult) =
     result.Events
     |> List.iter (function
@@ -223,6 +236,7 @@ let update msg model =
                 QueuedDirection = None
                 Error = None
                 ScoresError = None }
+            |> withFreshLastEel
         updated, scheduleCountdownCmd ()
     | CountdownTick ->
         log "Countdown" "Tick."
@@ -247,61 +261,72 @@ let update msg model =
                     PendingMoveMs = 0
                     QueuedDirection = None }
                 |> ensureFoodsForModel
+                |> withFreshLastEel
             log "Loop" $"Countdown complete. Starting loop at {model.SpeedMs} ms."
             updatedModel, Cmd.batch [ stopCountdownCmd
                                       startLoopCmd () ]
     | Tick when not model.GameRunning ->
         tryStopTick ()
         log "Loop" "Ignoring tick while game is paused."
-        { model with PendingMoveMs = 0; QueuedDirection = None }, Cmd.none
+        { model with
+            PendingMoveMs = 0
+            QueuedDirection = None
+            LastEel = model.Game.Eel },
+        Cmd.none
     | Tick ->
-        let rec processTicks currentModel accumulator collectedCmds =
-            if not currentModel.GameRunning then
-                { currentModel with PendingMoveMs = 0; QueuedDirection = None }, collectedCmds
-            elif accumulator < currentModel.SpeedMs then
-                { currentModel with PendingMoveMs = accumulator }, collectedCmds
+        if not model.GameRunning then
+            { model with PendingMoveMs = 0; QueuedDirection = None }, Cmd.none
+        else
+            let accumulator = model.PendingMoveMs + tickIntervalMs
+
+            if accumulator < model.SpeedMs then
+                { model with PendingMoveMs = accumulator }, Cmd.none
             else
                 let modelForMove =
-                    match currentModel.QueuedDirection with
+                    match model.QueuedDirection with
                     | Some queued ->
-                        { currentModel with
-                            Game = Game.changeDirection queued currentModel.Game
+                        { model with
+                            Game = Game.changeDirection queued model.Game
                             QueuedDirection = None }
-                    | None -> currentModel
+                    | None -> model
 
+                let startSegments = modelForMove.Game.Eel
                 let result = GameLoop.applyTick modelForMove
                 let updatedModel, cmd = handleTickResult result
-                let remaining = accumulator - currentModel.SpeedMs
+                let remaining =
+                    accumulator - model.SpeedMs
+                    |> max 0
+                    |> min (model.SpeedMs - 1)
 
-                if not updatedModel.GameRunning then
-                    { updatedModel with PendingMoveMs = 0 }, cmd :: collectedCmds
-                else
-                    let nextModel = { updatedModel with PendingMoveMs = remaining }
-                    processTicks nextModel remaining (cmd :: collectedCmds)
+                let updatedModel =
+                    { updatedModel with
+                        PendingMoveMs = remaining
+                        LastEel = startSegments }
 
-        log "Loop" "Processing tick."
-        let accumulator = model.PendingMoveMs + tickIntervalMs
-        let finalModel, cmdList = processTicks model accumulator []
-        let commands =
-            cmdList
-            |> List.filter (fun cmd -> not (List.isEmpty cmd))
-            |> List.rev
-
-        let command =
-            match commands with
-            | [] -> Cmd.none
-            | _ -> Cmd.batch commands
-
-        finalModel, command
+                updatedModel, cmd
     | ChangeDirection direction ->
-        if model.PendingMoveMs = 0 then
+        if model.GameRunning then
+            let updatedQueued =
+                match model.QueuedDirection with
+                | Some existing when existing = direction -> model.QueuedDirection
+                | _ -> Some direction
+
+            if model.PendingMoveMs = 0 then
+                let updatedGame = Game.changeDirection direction model.Game
+                { model with
+                    Game = updatedGame
+                    LastEel = updatedGame.Eel
+                    QueuedDirection = None },
+                Cmd.none
+            else
+                { model with QueuedDirection = updatedQueued }, Cmd.none
+        else
             let updatedGame = Game.changeDirection direction model.Game
             { model with
                 Game = updatedGame
-                QueuedDirection = None },
+                LastEel = updatedGame.Eel
+                QueuedDirection = Some direction },
             Cmd.none
-        else
-            { model with QueuedDirection = Some direction }, Cmd.none
     | Restart ->
         log "Game" "Restart requested."
         let resetModel =
@@ -319,6 +344,7 @@ let update msg model =
                 GameRunning = false
                 BoardLetters = createBoardLetters () }
             |> ensureFoodsForModel
+            |> withFreshLastEel
 
         resetModel,
         Cmd.batch [ stopLoopCmd
@@ -351,7 +377,7 @@ let update msg model =
                 { score with Name = sanitizedName }
 
             writeStoredHighScore (Some sanitized)
-            { model with
+            ({ model with
                 Saving = false
                 HighScore = Some sanitized
                 Error = None
@@ -360,7 +386,8 @@ let update msg model =
                 CountdownMs = 5000
                 GameRunning = false
                 PendingMoveMs = 0
-                QueuedDirection = None },
+                QueuedDirection = None }
+             |> withFreshLastEel),
             fetchScoresCmd
         | None ->
             log "HighScore" "Failed to save high score."
@@ -418,6 +445,7 @@ let update msg model =
                 Game = resetGame
                 BoardLetters = createBoardLetters () }
             |> ensureFoodsForModel
+            |> withFreshLastEel
 
         updatedModel, Cmd.none
     | VocabularyFailed message ->
@@ -432,6 +460,7 @@ let update msg model =
                 Game = resetGame
                 BoardLetters = createBoardLetters () }
             |> ensureFoodsForModel
+            |> withFreshLastEel
 
         updatedModel, Cmd.none
     | ScoresLoaded scores ->
