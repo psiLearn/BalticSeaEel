@@ -91,7 +91,7 @@ type ``Postgres repository``(fixture: PostgresFixture) =
             raise (XunitException($"Postgres tests unavailable: {reason}. Set EEL_SKIP_PG_TESTS=1 to skip."))
 
     [<PostgresFact>]
-    member _.``UpsertScore persists max per player`` () =
+    member _.``UpsertScore stores every submission`` () =
         ensureAvailable ()
         reset ()
         let repository = repo ()
@@ -99,14 +99,16 @@ type ``Postgres repository``(fixture: PostgresFixture) =
         Assert.Equal(10, inserted.Score)
 
         let lower = repository.UpsertScore { Name = "Ina"; Score = 5 }
-        Assert.Equal(10, lower.Score)
+        Assert.Equal(5, lower.Score)
 
         let higher = repository.UpsertScore { Name = "Ina"; Score = 42 }
         Assert.Equal(42, higher.Score)
 
-        let stored = repository.GetTopScore() |> Option.get
-        Assert.Equal(42, stored.Score)
-        Assert.Equal("Ina", stored.Name)
+        let scores = repository.GetScores()
+        Assert.Equal(3, scores.Length)
+        let top = repository.GetTopScore() |> Option.get
+        Assert.Equal(42, top.Score)
+        Assert.Equal("Ina", top.Name)
 
     [<PostgresFact>]
     member _.``GetScores returns ordered top ten`` () =

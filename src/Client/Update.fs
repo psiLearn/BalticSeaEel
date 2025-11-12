@@ -11,13 +11,19 @@ open Eel.Client.GameLoop
 open Shared
 open Shared.Game
 
+module ModelState = Eel.Client.Model
+
 module JS = Fable.Core.JS
 
 let private cleanupKey = "__eelCleanup"
 let private countdownKey = "__eelCountdown"
 let private tickKey = "__eelTick"
 let private highScoreStorageKey = "eel:highscore"
+let private startHotkeyKey = "__eelStartHotkey"
 let private tickIntervalMs = 40
+let private startCountdownMs = Config.gameplay.StartCountdownMs
+let private levelCountdownMs = Config.gameplay.LevelCountdownMs
+let private highlightSpeedSegmentsPerMs = 0.004
 
 let private log category message = printfn "[Update|%s] %s" category message
 
@@ -26,9 +32,9 @@ let private readStoredHighScore () =
         let storage = window.localStorage
         let raw = storage.getItem(highScoreStorageKey)
 
-        if isNull raw then
-            None
-        else
+        match raw with
+        | null -> None
+        | _ ->
             raw
             |> JS.JSON.parse
             |> unbox<HighScore>
@@ -44,6 +50,61 @@ let private writeStoredHighScore (score: HighScore option) =
         | Some hs -> storage.setItem(highScoreStorageKey, JS.JSON.stringify hs)
         | None -> storage.removeItem(highScoreStorageKey)
     with _ -> ()
+
+#if FABLE_COMPILER
+let private registerStartHotkey dispatch =
+    let existing: obj = window?(startHotkeyKey)
+    if isNull existing then
+        let listener =
+            fun (ev: Event) ->
+                let keyEvent = ev :?> KeyboardEvent
+                if keyEvent.key = " " then
+                    keyEvent.preventDefault ()
+                    dispatch StartGame
+
+        window.addEventListener ("keydown", listener)
+        window?(startHotkeyKey) <- listener
+
+let private unregisterStartHotkey () =
+    let existing: obj = window?(startHotkeyKey)
+    if not (isNull existing) then
+        let listener = existing :?> (Event -> unit)
+        window.removeEventListener ("keydown", listener)
+        window?(startHotkeyKey) <- null
+
+let private enableStartHotkeyCmd : Cmd<Msg> =
+    Cmd.ofEffect (fun dispatch -> registerStartHotkey dispatch)
+
+let private disableStartHotkeyCmd : Cmd<Msg> =
+    Cmd.ofEffect (fun _ -> unregisterStartHotkey ())
+#else
+let private enableStartHotkeyCmd : Cmd<Msg> = Cmd.none
+let private disableStartHotkeyCmd : Cmd<Msg> = Cmd.none
+#endif
+
+let private updateHighlightWave trigger deltaMs (model: Model) =
+    let activated =
+        if trigger then
+            { model with
+                HighlightActive = true
+                HighlightProgress = 0.0 }
+        else
+            model
+
+    if activated.HighlightActive then
+        let newProgress =
+            activated.HighlightProgress
+            + highlightSpeedSegmentsPerMs * float deltaMs
+
+        let maxSegments = float (max 1 activated.Game.Eel.Length) + 1.0
+        if newProgress >= maxSegments then
+            { activated with
+                HighlightActive = false
+                HighlightProgress = 0.0 }
+        else
+            { activated with HighlightProgress = newProgress }
+    else
+        activated
 
 let private tryStopATick key =
     let countdownObj: obj = window?(key)
@@ -95,14 +156,28 @@ let private withFreshLastEel (model: Model) =
     { model with LastEel = model.Game.Eel }
 
 let private movementProgress model =
-    if model.GameRunning && model.SpeedMs > 0 then
+    match (ModelState.isRunning model.Phase) && model.SpeedMs > 0 with
+    | true ->
         model.PendingMoveMs
         |> float
         |> fun v -> v / float model.SpeedMs
         |> max 0.0
         |> min 0.999
+    | false -> 0.0
+
+let private advancePhrase model =
+    let next, rest = Model.takeNextPhrase model.PhraseQueue
+    { model with
+        TargetText = next
+        TargetIndex = 0
+        PhraseQueue = rest
+        NeedsNextPhrase = false }
+
+let private ensureNextPhrase model =
+    if model.NeedsNextPhrase || String.IsNullOrWhiteSpace model.TargetText then
+        advancePhrase model
     else
-        0.0
+        model
 
 let private handleTickResult (result: GameLoop.TickResult) =
     result.Events
@@ -157,9 +232,9 @@ let startLoopCmd () : Cmd<Msg> =
                 | :? HTMLSelectElement -> true
                 | _ -> false
 
-            if isTypingTarget then
-                ()
-            else
+            match isTypingTarget with
+            | true -> ()
+            | false ->
                 match ev.key with
                 | "ArrowUp"
                 | "w"
@@ -183,6 +258,12 @@ let startLoopCmd () : Cmd<Msg> =
                     dispatch (ChangeDirection Direction.Right)
                 | " " ->
                     if ev.repeat |> not then
+                        ev.preventDefault ()
+                        dispatch TogglePause
+                | "r"
+                | "R" ->
+                    if ev.repeat |> not then
+                        ev.preventDefault ()
                         dispatch Restart
                 | _ -> ()
 
@@ -213,7 +294,8 @@ let init () =
         |> ensureFoodsForModel
 
     model,
-    Cmd.batch [ fetchHighScoreCmd
+    Cmd.batch [ enableStartHotkeyCmd
+                fetchHighScoreCmd
                 fetchVocabularyCmd
                 fetchScoresCmd ]
 
@@ -222,50 +304,73 @@ let update msg model =
     | StartGame when model.ScoresLoading ->
         log "Game" "Start requested while scores still loading; waiting."
         model, Cmd.none
-    | StartGame when not model.SplashVisible ->
+    | StartGame when model.Phase <> GamePhase.Splash ->
         log "Game" "Start requested but splash already dismissed."
         model, Cmd.none
     | StartGame ->
         log "Game" "Start requested from splash screen."
         let updated =
             { model with
-                SplashVisible = false
-                CountdownMs = 5000
-                GameRunning = false
+                CountdownMs = Config.gameplay.StartCountdownMs
+                Phase = GamePhase.Countdown
                 PendingMoveMs = 0
                 QueuedDirection = None
                 Error = None
                 ScoresError = None }
             |> withFreshLastEel
-        updated, scheduleCountdownCmd ()
+        updated, Cmd.batch [ 
+            disableStartHotkeyCmd 
+            scheduleCountdownCmd () 
+        ]
+    | TogglePause ->
+        match model.Phase with
+        | GamePhase.Running ->
+            log "Game" "Pausing loop."
+            tryStopTick ()
+            { model with
+                Phase = GamePhase.Paused
+                PendingMoveMs = 0
+                QueuedDirection = None
+                LastEel = model.Game.Eel },
+            Cmd.none
+        | GamePhase.Paused ->
+            log "Game" "Resuming loop."
+            { model with
+                Phase = GamePhase.Running
+                PendingMoveMs = 0
+                QueuedDirection = None
+                LastEel = model.Game.Eel },
+            startLoopCmd ()
+        | _ -> model, Cmd.none
     | CountdownTick ->
         log "Countdown" "Tick."
-        if model.SplashVisible || model.GameRunning then
-            model, Cmd.none
-        else
+        match model.Phase with
+        | GamePhase.Countdown ->
             let remaining = max 0 (model.CountdownMs - 1000)
             if remaining <= 0 then
                 tryStopCountdown ()
                 { model with CountdownMs = 0 }, Cmd.ofMsg CountdownFinished
             else
                 { model with CountdownMs = remaining }, scheduleCountdownCmd ()
+        | _ -> model, Cmd.none
     | CountdownFinished ->
         log "Countdown" "Finished."
-        if model.SplashVisible || model.GameRunning || model.CountdownMs > 0 then
-            model, Cmd.none
-        else
+        match model.Phase with
+        | GamePhase.Countdown when model.CountdownMs <= 0 ->
             let updatedModel =
                 { model with
-                    GameRunning = true
+                    Phase = GamePhase.Running
                     CountdownMs = 0
                     PendingMoveMs = 0
                     QueuedDirection = None }
+                |> ensureNextPhrase
                 |> ensureFoodsForModel
                 |> withFreshLastEel
             log "Loop" $"Countdown complete. Starting loop at {model.SpeedMs} ms."
             updatedModel, Cmd.batch [ stopCountdownCmd
                                       startLoopCmd () ]
-    | Tick when not model.GameRunning ->
+        | _ -> model, Cmd.none
+    | Tick when not (ModelState.isRunning model.Phase) ->
         tryStopTick ()
         log "Loop" "Ignoring tick while game is paused."
         { model with
@@ -274,14 +379,18 @@ let update msg model =
             LastEel = model.Game.Eel },
         Cmd.none
     | Tick ->
-        if not model.GameRunning then
-            { model with PendingMoveMs = 0; QueuedDirection = None }, Cmd.none
-        else
+        match ModelState.isRunning model.Phase with
+        | false -> { model with PendingMoveMs = 0; QueuedDirection = None }, Cmd.none
+        | true ->
             let accumulator = model.PendingMoveMs + tickIntervalMs
 
-            if accumulator < model.SpeedMs then
-                { model with PendingMoveMs = accumulator }, Cmd.none
-            else
+            match accumulator < model.SpeedMs with
+            | true ->
+                let updated =
+                    { model with PendingMoveMs = accumulator }
+                    |> updateHighlightWave false tickIntervalMs
+                updated, Cmd.none
+            | false ->
                 let modelForMove =
                     match model.QueuedDirection with
                     | Some queued ->
@@ -298,51 +407,67 @@ let update msg model =
                     |> max 0
                     |> min (model.SpeedMs - 1)
 
+                let letterCollected =
+                    result.Events
+                    |> List.exists (function
+                        | LetterCollected _ -> true
+                        | _ -> false)
+
                 let updatedModel =
                     { updatedModel with
                         PendingMoveMs = remaining
                         LastEel = startSegments }
+                    |> updateHighlightWave letterCollected accumulator
 
                 updatedModel, cmd
     | ChangeDirection direction ->
-        if model.GameRunning then
-            let updatedQueued =
-                match model.QueuedDirection with
-                | Some existing when existing = direction -> model.QueuedDirection
-                | _ -> Some direction
+        let currentDirection = model.Game.Direction
 
-            if model.PendingMoveMs = 0 then
+        if direction = currentDirection then
+            model, Cmd.none
+        else
+            match ModelState.isRunning model.Phase with
+            | true ->
+                let updatedQueued =
+                    match model.QueuedDirection with
+                    | Some existing when existing = direction -> model.QueuedDirection
+                    | _ -> Some direction
+
+                match model.PendingMoveMs = 0 with
+                | true ->
+                    let updatedGame = Game.changeDirection direction model.Game
+                    { model with
+                        Game = updatedGame
+                        LastEel = updatedGame.Eel
+                        QueuedDirection = None },
+                    Cmd.none
+                | false -> { model with QueuedDirection = updatedQueued }, Cmd.none
+            | false ->
                 let updatedGame = Game.changeDirection direction model.Game
                 { model with
                     Game = updatedGame
                     LastEel = updatedGame.Eel
-                    QueuedDirection = None },
+                    QueuedDirection = Some direction },
                 Cmd.none
-            else
-                { model with QueuedDirection = updatedQueued }, Cmd.none
-        else
-            let updatedGame = Game.changeDirection direction model.Game
-            { model with
-                Game = updatedGame
-                LastEel = updatedGame.Eel
-                QueuedDirection = Some direction },
-            Cmd.none
     | Restart ->
         log "Game" "Restart requested."
+        let restartQueue =
+            if String.IsNullOrWhiteSpace model.TargetText then model.PhraseQueue
+            else model.TargetText :: model.PhraseQueue
         let resetModel =
             { model with
                 Game = Game.restart ()
                 Error = None
-                Vocabulary = None
                 TargetText = ""
                 TargetIndex = 0
-                UseExampleNext = false
                 SpeedMs = initialSpeed
                 PendingMoveMs = 0
                 QueuedDirection = None
-                CountdownMs = 5000
-                GameRunning = false
+                CountdownMs = levelCountdownMs
+                Phase = GamePhase.Countdown
+                PhraseQueue = restartQueue
                 BoardLetters = createBoardLetters () }
+            |> advancePhrase
             |> ensureFoodsForModel
             |> withFreshLastEel
 
@@ -353,17 +478,21 @@ let update msg model =
                     fetchVocabularyCmd ]
     | SetPlayerName name -> { model with PlayerName = name }, Cmd.none
     | SaveHighScore ->
-        if model.PlayerName.Trim() = "" then
+        match () with
+        | _ when model.PlayerName.Trim() = "" ->
             { model with Error = Some "Enter a name before saving your score." }, Cmd.none
-        elif not model.Game.GameOver then
+        | _ when not model.Game.GameOver ->
             { model with Error = Some "You can only submit a score after the game ends." }, Cmd.none
-        elif model.Saving then
-            model, Cmd.none
-        else
+        | _ when ModelState.isSaving model.Phase -> model, Cmd.none
+        | _ ->
             let trimmedName = model.PlayerName.Trim()
-            let safeName = if trimmedName = "" then "Anonymous" else trimmedName
+            let safeName =
+                match trimmedName with
+                | "" -> "Anonymous"
+                | _ -> trimmedName
+
             { model with
-                Saving = true
+                Phase = GamePhase.SavingHighScore
                 Error = None },
             saveHighScoreCmd safeName model.Game.Score
     | HighScoreSaved result ->
@@ -371,28 +500,44 @@ let update msg model =
         | Some score ->
             log "HighScore" $"High score saved for {score.Name} ({score.Score})."
             let sanitizedName =
-                if String.IsNullOrWhiteSpace score.Name then "Anonymous" else score.Name
+                match String.IsNullOrWhiteSpace score.Name with
+                | true -> "Anonymous"
+                | false -> score.Name
 
             let sanitized =
                 { score with Name = sanitizedName }
 
+            let mergedScores =
+                let existingWithoutPlayer =
+                    model.Scores
+                    |> List.filter (fun entry ->
+                        not (
+                            entry.Name.Equals(
+                                sanitized.Name,
+                                StringComparison.OrdinalIgnoreCase
+                            )))
+
+                sanitized :: existingWithoutPlayer
+                |> List.sortByDescending (fun entry -> entry.Score)
+                |> List.truncate 10
+
             writeStoredHighScore (Some sanitized)
             ({ model with
-                Saving = false
+                Phase = GamePhase.Splash
                 HighScore = Some sanitized
                 Error = None
-                ScoresLoading = true
-                SplashVisible = true
-                CountdownMs = 5000
-                GameRunning = false
+                Scores = mergedScores
+                ScoresLoading = false
+                CountdownMs = startCountdownMs
                 PendingMoveMs = 0
                 QueuedDirection = None }
              |> withFreshLastEel),
-            fetchScoresCmd
+            Cmd.batch [ enableStartHotkeyCmd
+                        fetchScoresCmd ]
         | None ->
             log "HighScore" "Failed to save high score."
             { model with
-                Saving = false
+                Phase = GamePhase.GameOver
                 Error = Some "Unable to save your high score. Please try again." },
             Cmd.none
     | HighScoreLoaded hs ->
@@ -403,7 +548,9 @@ let update msg model =
                 Some localScore
             | Some serverScore, _ ->
                 let sanitizedName =
-                    if String.IsNullOrWhiteSpace serverScore.Name then "Anonymous" else serverScore.Name
+                    match String.IsNullOrWhiteSpace serverScore.Name with
+                    | true -> "Anonymous"
+                    | false -> serverScore.Name
 
                 log "HighScore" $"Loaded server high score {sanitizedName} ({serverScore.Score})."
                 Some { serverScore with Name = sanitizedName }
@@ -416,31 +563,20 @@ let update msg model =
         { model with HighScore = combined }, Cmd.none
     | VocabularyLoaded entry ->
         log "Vocabulary" $"Loaded vocabulary entry for topic '{entry.Topic}'."
-        let target =
-            if model.UseExampleNext then
-                entry.Example
-            else
-                $"{entry.Language1} - {entry.Language2}"
-
-        let cleaned =
-            let trimmed = target.Trim()
-            if trimmed = "" then target else trimmed
-
-        let finalTarget =
-            if cleaned.Trim() = "" then
-                fallbackTargetText
-            else
-                cleaned
-
-        log "Vocabulary" $"Using target phrase '{finalTarget}'."
-
         let resetGame = { model.Game with Foods = [] }
+        let phraseQueue =
+            entry
+            |> Model.phrasesFromVocabulary
+            |> Model.preparePhraseQueue
+        let nextPhrase, remainingQueue = Model.takeNextPhrase phraseQueue
 
         let updatedModel =
             { model with
                 Vocabulary = Some entry
-                TargetText = finalTarget
+                TargetText = nextPhrase
                 TargetIndex = 0
+                PhraseQueue = remainingQueue
+                NeedsNextPhrase = false
                 Error = None
                 Game = resetGame
                 BoardLetters = createBoardLetters () }
@@ -455,8 +591,9 @@ let update msg model =
         let updatedModel =
             { model with
                 Error = Some message
-                TargetText = fallbackTargetText
+                TargetText = Model.fallbackTargetText
                 TargetIndex = 0
+                NeedsNextPhrase = false
                 Game = resetGame
                 BoardLetters = createBoardLetters () }
             |> ensureFoodsForModel
@@ -468,7 +605,10 @@ let update msg model =
         let sanitized =
             scores
             |> List.map (fun score ->
-                let name = if String.IsNullOrWhiteSpace score.Name then "Anonymous" else score.Name.Trim()
+                let name =
+                    match String.IsNullOrWhiteSpace score.Name with
+                    | true -> "Anonymous"
+                    | false -> score.Name.Trim()
                 { score with Name = name })
             |> List.sortByDescending (fun score -> score.Score)
 

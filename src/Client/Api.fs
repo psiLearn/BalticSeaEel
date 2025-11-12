@@ -27,24 +27,30 @@ let private apiBaseUrl =
         let location = window.location
         let origin = location.origin
 
-        if location.port = "5173" then
-            let protocol = if location.protocol = "https:" then "https" else "http"
+        match location.port = "5173" with
+        | true ->
+            let protocol =
+                match location.protocol = "https:" with
+                | true -> "https"
+                | false -> "http"
+
             let baseUrl = $"{protocol}://{location.hostname}:5000"
             log "Config" $"Deriving API base URL '{baseUrl}' for dev server."
             baseUrl
-        else
+        | false ->
             log "Config" $"Using origin '{origin}' as API base URL."
             origin
 
 let private combineUrl (baseUrl: string) (path: string) =
-    if path.StartsWith("http://") || path.StartsWith("https://") then
-        path
-    elif String.IsNullOrWhiteSpace baseUrl then
-        path
-    elif baseUrl.EndsWith("/") then
-        baseUrl.TrimEnd('/') + path
-    else
-        baseUrl + path
+    match path.StartsWith("http://") || path.StartsWith("https://") with
+    | true -> path
+    | false ->
+        match String.IsNullOrWhiteSpace baseUrl with
+        | true -> path
+        | false ->
+            match baseUrl.EndsWith("/") with
+            | true -> baseUrl.TrimEnd('/') + path
+            | false -> baseUrl + path
 
 let private fetch (path: string) (init: obj option) : JS.Promise<obj> =
     let url = combineUrl apiBaseUrl path
@@ -76,7 +82,8 @@ let fetchHighScore (_: unit) =
                 fetch "/api/highscore" None
                 |> withTimeout 5000
 
-            if response?ok then
+            match response?ok with
+            | true ->
                 let! text = response?text () |> unbox<JS.Promise<string>>
                 log "HighScore" "Successfully fetched high score."
                 log "HighScore" $"Parsed high score payload: {text}"
@@ -84,21 +91,23 @@ let fetchHighScore (_: unit) =
                 let raw = text |> JS.JSON.parse
 
                 let nameValue =
-                    if isNullOrUndefined raw?name then
-                        "Anonymous"
-                    else
+                    match isNullOrUndefined raw?name with
+                    | true -> "Anonymous"
+                    | false ->
                         let name: string = raw?name
-                        if System.String.IsNullOrWhiteSpace name then "Anonymous" else name
+                        match System.String.IsNullOrWhiteSpace name with
+                        | true -> "Anonymous"
+                        | false -> name
 
                 let scoreValue =
-                    if isNullOrUndefined raw?score then
-                        0
-                    else
+                    match isNullOrUndefined raw?score with
+                    | true -> 0
+                    | false ->
                         let score: float = raw?score
                         score |> System.Math.Round |> int
 
                 return Some { Name = nameValue; Score = scoreValue }
-            else
+            | false ->
                 let status: int = response?status |> unbox<int>
                 log "HighScore" $"Request failed with status {status}."
                 return None
@@ -121,11 +130,12 @@ let saveHighScore (name, score) =
 
         let! response = fetch "/api/highscore" (Some init)
 
-        if response?ok then
+        match response?ok with
+        | true ->
             let! text = response?text () |> unbox<JS.Promise<string>>
             log "HighScore" "Score saved successfully."
             return text |> ofJson<HighScore> |> Some
-        else
+        | false ->
             let status: int = response?status |> unbox<int>
             log "HighScore" $"Failed to save score (status {status})."
             return None
@@ -138,7 +148,8 @@ let fetchVocabulary (_: unit) =
             fetch "/api/vocabulary" None
             |> withTimeout 5000
 
-        if response?ok then
+        match response?ok with
+        | true ->
             let! text = response?text () |> unbox<JS.Promise<string>>
             log "Vocabulary" $"Received vocabulary payload: {text}"
 
@@ -152,7 +163,7 @@ let fetchVocabulary (_: unit) =
 
             log "Vocabulary" $"Parsed entry topic '{entry.Topic}'."
             return entry
-        else
+        | false ->
             let status: int = response?status |> unbox<int>
             log "Vocabulary" $"Failed to fetch vocabulary (status {status}); falling back."
             return defaultVocabularyEntry
@@ -165,23 +176,37 @@ let fetchScores (_: unit) =
             fetch "/api/scores" None
             |> withTimeout 5000
 
-        if response?ok then
+        match response?ok with
+        | true ->
             let! text = response?text () |> unbox<JS.Promise<string>>
             log "Scores" $"Received scoreboard payload: {text}"
 
             let entries =
                 text
                 |> JS.JSON.parse
-                |> unbox<HighScore array>
-                |> Array.toList
-                |> List.map (fun score ->
-                    let sanitizedName =
-                        if String.IsNullOrWhiteSpace score.Name then "Anonymous" else score.Name.Trim()
+                |> unbox<obj array>
+                |> Array.choose (fun raw ->
+                    let nameValue =
+                        match isNullOrUndefined raw?name with
+                        | true -> "Anonymous"
+                        | false ->
+                            let name: string = raw?name
+                            match String.IsNullOrWhiteSpace name with
+                            | true -> "Anonymous"
+                            | false -> name.Trim()
 
-                    { score with Name = sanitizedName })
+                    let scoreValue =
+                        match isNullOrUndefined raw?score with
+                        | true -> 0
+                        | false ->
+                            let score: float = raw?score
+                            score |> Math.Round |> int
+
+                    Some { Name = nameValue; Score = scoreValue })
+                |> Array.toList
 
             return entries
-        else
+        | false ->
             let status: int = response?status |> unbox<int>
             return raise (Exception $"Failed to fetch scores (status {status}).")
     }

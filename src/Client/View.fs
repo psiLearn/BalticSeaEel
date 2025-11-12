@@ -15,6 +15,8 @@ open Eel.Client.Model
 open Shared
 open Shared.Game
 
+module ModelState = Eel.Client.Model
+
 let private canvasPadding = 18.0
 let private cellSize = 26.0
 let private cellGap = 6.0
@@ -30,13 +32,23 @@ let private reactUseEffect (callback: unit -> unit) (deps: obj array) : unit = j
 let private boardPixelSize dimension =
     (float dimension * cellStep) - cellGap + (2.0 * canvasPadding)
 
-let private drawLetter (ctx: CanvasRenderingContext2D) text x y rotation =
+let private drawLetter (ctx: CanvasRenderingContext2D) text x y rotation highlight =
     ctx?save()
     ctx?translate(x + cellSize / 2., y + cellSize / 2.)
     if rotation <> 0.0 then
         ctx?rotate(rotation)
-    ctx?fillStyle <- "#e6ecec"
-    ctx.font <- "bold 14px 'Segoe UI'"
+
+    let baseColor = "#e6ecec"
+    let color =
+        if highlight <= 0.0 then
+            baseColor
+        else
+            let alpha = min 1.0 (0.6 + (0.4 * highlight))
+            $"rgba(255,255,255,{alpha})"
+
+    let fontSize = 14.0 + (6.0 * highlight)
+    ctx?fillStyle <- color
+    ctx.font <- $"bold {fontSize}px 'Segoe UI'"
     ctx?textAlign <- "center"
     ctx?textBaseline <- "middle"
     ctx.fillText (text, 0., 0.)
@@ -109,14 +121,14 @@ let private drawBoard (canvas: HTMLCanvasElement) (model: Model) =
                     ctx.beginPath()
                     ctx.arc (drawX + cellSize / 2., drawY + cellSize / 2., cellSize / 2.6, 0., Math.PI * 2.)
                     ctx.fill()
-                    if letter <> "" then drawLetter ctx letter drawX drawY 0.0
+                    if letter <> "" then drawLetter ctx letter drawX drawY 0.0 0.0
                 | FoodStatus.Collected ->
                     ctx?fillStyle <- "rgba(255,255,255,0.15)"
                     ctx.fillRect (drawX, drawY, cellSize, cellSize)
-                    if letter <> "" then drawLetter ctx letter drawX drawY 0.0
+                    if letter <> "" then drawLetter ctx letter drawX drawY 0.0 0.0
             | None ->
                 let letter = boardLetterFor point
-                if letter <> "" then drawLetter ctx letter drawX drawY 0.0
+                if letter <> "" then drawLetter ctx letter drawX drawY 0.0 0.0
 
     let built, _ = progressParts model
     let builtChars = built |> Seq.toList
@@ -137,23 +149,21 @@ let private drawBoard (canvas: HTMLCanvasElement) (model: Model) =
     let maxSegments = max 1 (max currentSegmentsRaw.Length previousSegmentsRaw.Length)
 
     let padSegments (segments: Point array) =
-        if segments.Length = 0 then
-            Array.init maxSegments (fun _ -> { X = 0; Y = 0 })
-        elif segments.Length = maxSegments then
-            segments
-        else
+        match segments.Length with
+        | 0 -> Array.init maxSegments (fun _ -> { X = 0; Y = 0 })
+        | len when len = maxSegments -> segments
+        | len ->
             Array.init maxSegments (fun idx ->
-                if idx < segments.Length then
-                    segments.[idx]
-                else
-                    segments.[segments.Length - 1])
+                match idx < len with
+                | true -> segments.[idx]
+                | false -> segments.[len - 1])
 
     let currentSegments = padSegments currentSegmentsRaw
     let previousSegments =
-        if model.GameRunning then padSegments previousSegmentsRaw else currentSegments
+        if ModelState.isRunning model.Phase then padSegments previousSegmentsRaw else currentSegments
 
     let progress =
-        if model.GameRunning && model.SpeedMs > 0 then
+        if ModelState.isRunning model.Phase && model.SpeedMs > 0 then
             model.PendingMoveMs |> float |> fun v -> v / float model.SpeedMs |> max 0.0 |> min 0.999
         else
             0.0
@@ -184,9 +194,25 @@ let private drawBoard (canvas: HTMLCanvasElement) (model: Model) =
         ctx.fillRect (-cellSize / 2., -cellSize / 2., cellSize, cellSize)
         ctx.restore()
 
+        let highlightStrength =
+            if model.HighlightActive then
+                let distance = abs (model.HighlightProgress - float idx)
+                if distance < 1.0 then 1.0 - distance else 0.0
+            else
+                0.0
+
+        let letterRotation =
+            if Config.gameplay.RotateSegmentLetters then
+                rotation + Math.PI
+            else
+                0.0
+
         match Map.tryFind idx assignedLetters with
-        | Some letter when not (String.IsNullOrWhiteSpace letter) -> drawLetter ctx letter x y rotation
-        | _ -> if idx <> maxSegments - 1 then drawLetter ctx (fallbackLetter curr) x y rotation
+        | Some letter when not (String.IsNullOrWhiteSpace letter) ->
+            drawLetter ctx letter x y letterRotation highlightStrength
+        | _ ->
+            if idx <> maxSegments - 1 then
+                drawLetter ctx (fallbackLetter curr) x y letterRotation highlightStrength
 
 let private boardCanvas =
     FunctionComponent.Of(
@@ -205,7 +231,7 @@ let private boardCanvas =
                    box model.TargetText
                    box model.LastEel
                    box model.SpeedMs
-                   box model.GameRunning |]
+                   box (ModelState.isRunning model.Phase) |]
 
             canvas [ Ref(fun el ->
                         let value =
@@ -234,7 +260,7 @@ let private nameInputOnChange dispatch =
 
 
 let private countdownOverlay model =
-    if not model.GameRunning then
+    if not (ModelState.isRunning model.Phase) then
         let seconds = max 0 ((model.CountdownMs + 999) / 1000)
         let label = if seconds > 0 then string seconds else "GO!"
         [ div [ ClassName "board-overlay" ] [ str label ] ]
@@ -256,7 +282,7 @@ let private boardView model =
             |> Seq.toList
 
     let collectedSection =
-        if model.SplashVisible then
+        if ModelState.isSplash model.Phase then
             fragment [] []
         else
             let body =
@@ -330,11 +356,11 @@ let private statsView model dispatch =
                     Value model.PlayerName
                     Placeholder "Your name"
                     nameInputOnChange dispatch
-                    Disabled model.Saving ]
+                    Disabled (ModelState.isSaving model.Phase) ]
             button [ ClassName "action"
-                     Disabled(model.Saving || not model.Game.GameOver)
+                     Disabled(ModelState.isSaving model.Phase || not model.Game.GameOver)
                      OnClick(fun _ -> dispatch SaveHighScore) ] [
-                if model.Saving then str "Saving..." else str "Save score"
+                if ModelState.isSaving model.Phase then str "Saving..." else str "Save score"
             ]
             button [ ClassName "action secondary"
                      OnClick(fun _ -> dispatch Restart) ] [ str "Restart" ]
@@ -352,7 +378,7 @@ let private statsView model dispatch =
     ] 
 
 let view model dispatch =
-    if model.SplashVisible then
+    if ModelState.isSplash model.Phase then
         div [ ClassName "layout layout-splash" ] [
             div [ ClassName "splash-screen" ] [
                 div [ ClassName "splash-content" ] [
