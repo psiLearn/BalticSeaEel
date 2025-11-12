@@ -40,10 +40,9 @@ module Game =
                 { X = rng.Next(0, boardWidth)
                   Y = rng.Next(0, boardHeight) }
 
-            if occupied |> List.exists ((=) candidate) then
-                loop ()
-            else
-                candidate
+            match occupied |> List.exists ((=) candidate) with
+            | true -> loop ()
+            | false -> candidate
 
         loop ()
 
@@ -71,9 +70,9 @@ module Game =
         state.Eel @ (state.Foods |> List.map (fun token -> token.Position))
 
     let move state =
-        if state.GameOver then
-            state
-        else
+        match state.GameOver with
+        | true -> state
+        | false ->
             let nextHead = advanceHead state.Direction (List.head state.Eel)
 
             let hitsWall =
@@ -84,9 +83,9 @@ module Game =
 
             let hitsSelf = collides nextHead state.Eel
 
-            if hitsWall || hitsSelf then
-                { state with GameOver = true }
-            else
+            match hitsWall || hitsSelf with
+            | true -> { state with GameOver = true }
+            | false ->
                 let hitToken =
                     state.Foods
                     |> List.tryFind (fun token -> token.Position = nextHead && token.Status = FoodStatus.Active)
@@ -94,27 +93,26 @@ module Game =
                 let foods =
                     state.Foods
                     |> List.map (fun token ->
-                        if token.Position = nextHead then
+                        match token.Position = nextHead with
+                        | true ->
                             match token.Status with
                             | FoodStatus.Active -> { token with Status = FoodStatus.Collected }
                             | _ -> token
-                        else
-                            token)
+                        | false -> token)
 
                 let growing = hitToken |> Option.isSome
 
                 let eel =
-                    if growing then
-                        nextHead :: state.Eel
-                    else
+                    match growing with
+                    | true -> nextHead :: state.Eel
+                    | false ->
                         nextHead
                         :: (state.Eel |> List.take (state.Eel.Length - 1))
 
                 let score =
-                    if growing then
-                        state.Score + 10
-                    else
-                        state.Score
+                    match growing with
+                    | true -> state.Score + 10
+                    | false -> state.Score
 
                 { state with
                     Eel = eel
@@ -122,9 +120,9 @@ module Game =
                     Score = score }
 
     let spawnFood letterIndex state =
-        if state.Foods |> List.exists (fun token -> token.LetterIndex = letterIndex) then
-            state
-        else
+        match state.Foods |> List.exists (fun token -> token.LetterIndex = letterIndex) with
+        | true -> state
+        | false ->
             let occupied = occupiedPoints state
             let position = randomPoint occupied
 
@@ -144,9 +142,8 @@ module Game =
             | Direction.Right, Direction.Left -> true
             | _ -> false
 
-        if isOpposite state.Direction direction then
-            state
-        else
-            { state with Direction = direction }
+        match isOpposite state.Direction direction with
+        | true -> state
+        | false -> { state with Direction = direction }
 
     let restart () = initialState ()

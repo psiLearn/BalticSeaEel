@@ -113,7 +113,7 @@ let ``GET /scores returns ordered scoreboard`` () =
     Assert.Equal(42, top.Score)
 
 [<Fact>]
-let ``Upsert replaces lower score for same player`` () =
+let ``Upsert keeps multiple entries per player`` () =
     let repo = InMemoryScoreRepository() :> IScoreRepository
     let store = HighScoreStore(repo)
     store.Upsert { Name = "Alex"; Score = 10 } |> ignore
@@ -126,4 +126,4 @@ let ``Upsert replaces lower score for same player`` () =
 
     let all = store.GetAll()
     let alexEntries = all |> List.filter (fun s -> s.Name = "Alex")
-    Assert.Single(alexEntries)
+    Assert.Equal<int list>([ 25; 10 ], alexEntries |> List.map (fun s -> s.Score))

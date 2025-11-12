@@ -29,10 +29,10 @@ let private mkLetterModel () =
 
     { initModel with
         Game = game
-        GameRunning = true
+        Phase = GamePhase.Running
         TargetText = "ok"
+        PhraseQueue = [ "example phrase" ]
         TargetIndex = 0
-        SplashVisible = false
         ScoresLoading = false }
     |> ensureFoodsForModel
 

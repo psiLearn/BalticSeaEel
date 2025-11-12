@@ -4,7 +4,6 @@ open Giraffe
 open Shared
 open Serilog
 open Eel.Server.Services
-
 module HttpHandlers =
 
     let getHighScoreHandler: HttpHandler =
@@ -34,6 +33,13 @@ module HttpHandlers =
 
     let getVocabularyHandler: HttpHandler =
         fun next ctx ->
-            let entry = Vocabulary.getRandom ()
-            Log.Information("Serving vocabulary topic {Topic}", entry.Topic)
-            json entry next ctx
+            task {
+                let repository = ctx.GetService<IVocabularyRepository>()
+                match repository.GetRandom() with
+                | Some entry ->
+                    Log.Information("Serving vocabulary topic {Topic}", entry.Topic)
+                    return! json entry next ctx
+                | None ->
+                    Log.Warning("Vocabulary repository returned no entries.")
+                    return! RequestErrors.NOT_FOUND "No vocabulary entries available." next ctx
+            }

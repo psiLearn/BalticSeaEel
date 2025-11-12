@@ -4,33 +4,63 @@ open System
 open Shared
 open Shared.Game
 
+type GamePhase =
+    | Splash
+    | Countdown
+    | Running
+    | Paused
+    | GameOver
+    | SavingHighScore
+
 type Model =
     { Game: GameState
       PlayerName: string
       HighScore: HighScore option
-      Saving: bool
       Error: string option
       Vocabulary: VocabularyEntry option
       TargetText: string
       TargetIndex: int
-      UseExampleNext: bool
+      PhraseQueue: string list
+      NeedsNextPhrase: bool
+      HighlightProgress: float
+      HighlightActive: bool
       SpeedMs: int
       PendingMoveMs: int
       QueuedDirection: Direction option
       LastEel: Point list
       CountdownMs: int
-      GameRunning: bool
+      Phase: GamePhase
       BoardLetters: string array
       Scores: HighScore list
       ScoresLoading: bool
-      ScoresError: string option
-      SplashVisible: bool }
+      ScoresError: string option }
+
+let isRunning phase =
+    match phase with
+    | GamePhase.Running -> true
+    | _ -> false
+
+let isPaused phase =
+    match phase with
+    | GamePhase.Paused -> true
+    | _ -> false
+
+let isSplash phase =
+    match phase with
+    | GamePhase.Splash -> true
+    | _ -> false
+
+let isSaving phase =
+    match phase with
+    | GamePhase.SavingHighScore -> true
+    | _ -> false
 
 type Msg =
     | Tick
     | CountdownTick
     | CountdownFinished
     | StartGame
+    | TogglePause
     | ChangeDirection of Direction
     | Restart
     | SetPlayerName of string
@@ -77,27 +107,56 @@ let ensureBoardLetters (letters: string array) =
     else
         letters
 
+let sanitizePhrase (text: string) =
+    if obj.ReferenceEquals(text, null) then
+        None
+    else
+        let trimmed = text.Trim()
+        if String.IsNullOrWhiteSpace trimmed then None else Some trimmed
+
+let phrasesFromVocabulary (entry: VocabularyEntry) =
+    [ $"{entry.Language1} - {entry.Language2}"
+      entry.Example ]
+    |> List.choose sanitizePhrase
+
+let preparePhraseQueue phrases =
+    match phrases |> List.choose sanitizePhrase with
+    | [] -> [ fallbackTargetText ]
+    | sanitized -> sanitized
+
+let takeNextPhrase queue =
+    match queue with
+    | next :: rest -> next, rest
+    | [] -> fallbackTargetText, []
+
 let initModel =
+    let initialQueue =
+        defaultVocabularyEntry
+        |> phrasesFromVocabulary
+        |> preparePhraseQueue
+    let initialTarget, remainingQueue = takeNextPhrase initialQueue
+
     { Game = Game.initialState ()
       PlayerName = ""
       HighScore = None
-      Saving = false
       Error = None
       Vocabulary = Some defaultVocabularyEntry
-      TargetText = $"{defaultVocabularyEntry.Language1} - {defaultVocabularyEntry.Language2}"
+      TargetText = initialTarget
       TargetIndex = 0
-      UseExampleNext = false
+      PhraseQueue = remainingQueue
+      NeedsNextPhrase = false
+      HighlightProgress = 0.0
+      HighlightActive = false
       SpeedMs = initialSpeed
       PendingMoveMs = 0
       QueuedDirection = None
       LastEel = (Game.initialState ()).Eel
-      CountdownMs = 5000
-      GameRunning = false
+      CountdownMs = Config.gameplay.StartCountdownMs
+      Phase = Splash
       BoardLetters = createBoardLetters ()
       Scores = []
       ScoresLoading = true
-      ScoresError = None
-      SplashVisible = true }
+      ScoresError = None }
 
 let nextTargetChar model =
     if model.TargetIndex < model.TargetText.Length then
@@ -105,7 +164,7 @@ let nextTargetChar model =
     else
         None
 
-let displayChar c = if c = ' ' then "·" else string c
+let displayChar = string //c = id //if c = ' ' then "·" else string c
 
 let progressParts model =
     if model.TargetText = "" then

@@ -5,6 +5,8 @@ open Eel.Client.Model
 open Shared
 open Shared.Game
 
+let private levelCountdownMs = Config.gameplay.LevelCountdownMs
+
 type TickEvent =
     | GameOver
     | LetterCollected of int
@@ -30,10 +32,9 @@ let private computeHighScore (playerName: string) (current: HighScore option) (n
     | None when nextGame.Score > 0 ->
         let trimmed = playerName.Trim()
         let name =
-            if String.IsNullOrWhiteSpace trimmed then
-                "Anonymous"
-            else
-                trimmed
+            match String.IsNullOrWhiteSpace trimmed with
+            | true -> "Anonymous"
+            | false -> trimmed
 
         let updated = { Name = name; Score = nextGame.Score }
         Some updated, [ PersistHighScore (Some updated) ]
@@ -49,31 +50,31 @@ let private phraseCompleted (model: Model) (currentGame: GameState) =
 
     let restartedGame =
         Game.restart ()
-        |> fun g -> { g with Score = currentGame.Score }
+        |> fun g ->
+            { g with
+                Score = currentGame.Score
+                Direction = currentGame.Direction }
 
     { model with
         Game = restartedGame
-        TargetText = ""
-        TargetIndex = 0
-        Vocabulary = None
-        UseExampleNext = not model.UseExampleNext
         SpeedMs = newSpeed
-        CountdownMs = 3000
-        GameRunning = false },
+        CountdownMs = levelCountdownMs
+        Phase = GamePhase.Countdown
+        NeedsNextPhrase = true },
     newSpeed
 
 let maxVisibleFoods = Config.gameplay.MaxVisibleFoods
 
 let ensureUpcomingFoods (model: Model) (state: GameState) =
-    if model.TargetText = "" then
-        state
-    else
+    match model.TargetText with
+    | "" -> state
+    | _ ->
         let lastIndex =
             min (model.TargetText.Length - 1) (model.TargetIndex + maxVisibleFoods - 1)
 
-        if lastIndex < model.TargetIndex then
-            state
-        else
+        match lastIndex < model.TargetIndex with
+        | true -> state
+        | false ->
             [ model.TargetIndex .. lastIndex ]
             |> List.fold (fun acc idx -> Game.spawnFood idx acc) state
 
@@ -88,19 +89,17 @@ let applyTick (model: Model) : TickResult =
     let nextLetterIndex = model.TargetIndex + 1
 
     let withNewSpawn =
-        if movedGame.Score > model.Game.Score && nextLetterIndex < model.TargetText.Length then
-            Game.spawnFood nextLetterIndex movedGame
-        else
-            movedGame
+        match movedGame.Score > model.Game.Score && nextLetterIndex < model.TargetText.Length with
+        | true -> Game.spawnFood nextLetterIndex movedGame
+        | false -> movedGame
 
     let ensuredGame =
         let hasActive =
             withNewSpawn.Foods |> List.exists (fun token -> token.Status = FoodStatus.Active)
 
-        if not hasActive && model.TargetIndex < model.TargetText.Length then
-            Game.spawnFood model.TargetIndex withNewSpawn
-        else
-            withNewSpawn
+        match not hasActive && model.TargetIndex < model.TargetText.Length with
+        | true -> Game.spawnFood model.TargetIndex withNewSpawn
+        | false -> withNewSpawn
 
     let highScore, highScoreEffects =
         computeHighScore model.PlayerName model.HighScore ensuredGame
@@ -111,32 +110,40 @@ let applyTick (model: Model) : TickResult =
             HighScore = highScore }
 
     let result =
-        if ensuredGame.GameOver then
-            { Model = { baseModel with GameRunning = false }
+        match ensuredGame.GameOver with
+        | true ->
+            { Model = { baseModel with Phase = GamePhase.GameOver }
               Events = [ GameOver ]
               Effects = StopLoop :: highScoreEffects }
-        else
+        | false ->
             let collectedLetter = movedGame.Score > model.Game.Score
 
-            if collectedLetter && model.TargetText.Length > 0 then
+            match collectedLetter && model.TargetText.Length > 0 with
+            | true ->
                 let nextIndex = model.TargetIndex + 1
 
-                if nextIndex >= model.TargetText.Length then
+                match nextIndex >= model.TargetText.Length with
+                | true ->
                     let completedModel, newSpeed = phraseCompleted baseModel ensuredGame
+
+                    let fetchEffects =
+                        match model.PhraseQueue with
+                        | [] -> [ FetchVocabulary ]
+                        | _ -> []
 
                     { Model = completedModel
                       Events = [ PhraseCompleted newSpeed ]
                       Effects =
                         [ CleanupLoop
                           StopLoop
-                          ScheduleCountdown
-                          FetchVocabulary ]
+                          ScheduleCountdown ]
+                        @ fetchEffects
                         @ highScoreEffects }
-                else
+                | false ->
                     { Model = { baseModel with TargetIndex = nextIndex }
                       Events = [ LetterCollected nextIndex ]
                       Effects = highScoreEffects }
-            else
+            | false ->
                 { Model = baseModel
                   Events = []
                   Effects = highScoreEffects }

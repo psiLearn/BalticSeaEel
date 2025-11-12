@@ -5,6 +5,8 @@ open Elmish
 open Eel.Client.Model
 open Shared
 
+module ModelState = Eel.Client.Model
+
 module Game = Shared.Game
 module Update = Eel.Client.Update
 module Loop = Eel.Client.GameLoop
@@ -13,8 +15,11 @@ let private withTarget target index =
     { initModel with
         TargetText = target
         TargetIndex = index
-        SplashVisible = false
+        PhraseQueue = []
+        Phase = GamePhase.Running
         ScoresLoading = false }
+
+let private withPhase phase model = { model with Phase = phase }
 
 let private foodToken position letterIndex status =
     { LetterIndex = letterIndex
@@ -107,15 +112,14 @@ let ``update Tick stops loop when game already over`` () =
     let model =
         { initModel with
             Game = game
-            GameRunning = true
+            Phase = GamePhase.Running
             HighScore = Some { Name = "A"; Score = 999 }
-            SplashVisible = false
             ScoresLoading = false }
     let model = { model with PendingMoveMs = model.SpeedMs }
 
     let updated, cmd = Update.update Tick model
 
-    Assert.False(updated.GameRunning)
+    Assert.False(ModelState.isRunning updated.Phase)
     Assert.True(updated.Game.GameOver)
     Assert.Equal(game.Score, updated.Game.Score)
     Assert.NotEmpty(cmd)
@@ -136,17 +140,17 @@ let ``update Tick advances target when collecting letter`` () =
     let model =
         { initModel with
             Game = modelGame
-            GameRunning = true
+            Phase = GamePhase.Running
             HighScore = Some { Name = "A"; Score = 999 }
             TargetText = "ok"
+            PhraseQueue = []
             TargetIndex = 0
-            SplashVisible = false
             ScoresLoading = false }
     let model = { model with PendingMoveMs = model.SpeedMs }
 
     let updated, cmd = Update.update Tick model
 
-    Assert.True(updated.GameRunning)
+    Assert.True(ModelState.isRunning updated.Phase)
     Assert.Equal(1, updated.TargetIndex)
     Assert.Equal("ok", updated.TargetText)
     Assert.Empty(cmd)
@@ -164,8 +168,7 @@ let ``update Tick accumulates pending before movement`` () =
     let model =
         { initModel with
             Game = game
-            GameRunning = true
-            SplashVisible = false
+            Phase = GamePhase.Running
             ScoresLoading = false
             PendingMoveMs = 0 }
 
@@ -188,8 +191,7 @@ let ``update Tick performs at most one move per frame`` () =
     let model =
         { initModel with
             Game = game
-            GameRunning = true
-            SplashVisible = false
+            Phase = GamePhase.Running
             ScoresLoading = false
             PendingMoveMs = initModel.SpeedMs * 2 }
 
@@ -204,8 +206,7 @@ let ``ChangeDirection queues when mid step`` () =
     let model =
         { initModel with
             Game = { Game.initialState () with Direction = Direction.Right }
-            GameRunning = true
-            SplashVisible = false
+            Phase = GamePhase.Running
             ScoresLoading = false
             PendingMoveMs = 20 }
 
@@ -219,8 +220,7 @@ let ``queued direction applies after full step`` () =
     let model =
         { initModel with
             Game = { Game.initialState () with Direction = Direction.Right }
-            GameRunning = true
-            SplashVisible = false
+            Phase = GamePhase.Running
             ScoresLoading = false
             PendingMoveMs = 10 }
 
@@ -237,8 +237,7 @@ let ``ChangeDirection applies immediately when aligned`` () =
     let model =
         { initModel with
             Game = { Game.initialState () with Direction = Direction.Right }
-            GameRunning = true
-            SplashVisible = false
+            Phase = GamePhase.Running
             ScoresLoading = false
             PendingMoveMs = 0 }
 
@@ -252,8 +251,7 @@ let ``ChangeDirection queues while mid step`` () =
     let midModel =
         { initModel with
             Game = { Game.initialState () with Direction = Direction.Right }
-            GameRunning = true
-            SplashVisible = false
+            Phase = GamePhase.Running
             ScoresLoading = false
             PendingMoveMs = initModel.SpeedMs / 2 }
 
@@ -273,14 +271,13 @@ let ``applyTick marks game over and requests loop stop`` () =
     let model =
         { initModel with
             Game = game
-            GameRunning = true
+            Phase = GamePhase.Running
             HighScore = Some { Name = "A"; Score = 25 }
-            SplashVisible = false
             ScoresLoading = false }
 
     let result = Loop.applyTick model
 
-    Assert.False(result.Model.GameRunning)
+    Assert.False(ModelState.isRunning result.Model.Phase)
     Assert.Contains(Loop.GameOver, result.Events)
     Assert.Contains(Loop.StopLoop, result.Effects)
 
@@ -303,23 +300,22 @@ let ``applyTick completes phrase and prepares next round`` () =
     let model =
         { initModel with
             Game = modelGame
-            GameRunning = true
+            Phase = GamePhase.Running
             TargetText = "hi"
             TargetIndex = 1
             SpeedMs = 200
-            UseExampleNext = false
-            SplashVisible = false
+            PhraseQueue = [ "example phrase" ]
             ScoresLoading = false }
 
     let result = Loop.applyTick model
 
-    Assert.False(result.Model.GameRunning)
+    Assert.False(ModelState.isRunning result.Model.Phase)
     Assert.Equal("", result.Model.TargetText)
     Assert.Equal(0, result.Model.TargetIndex)
-    Assert.Equal(3000, result.Model.CountdownMs)
-    Assert.True(result.Model.UseExampleNext)
+    Assert.Equal(Config.gameplay.LevelCountdownMs, result.Model.CountdownMs)
+    Assert.Equal<string list>([ "example phrase" ], result.Model.PhraseQueue)
     Assert.Contains(Loop.CleanupLoop, result.Effects)
-    Assert.Contains(Loop.FetchVocabulary, result.Effects)
+    Assert.DoesNotContain(Loop.FetchVocabulary, result.Effects)
     Assert.Contains(Loop.ScheduleCountdown, result.Effects)
     Assert.Contains(Loop.StopLoop, result.Effects)
     Assert.Empty(result.Model.Game.Foods)
@@ -348,10 +344,9 @@ let ``applyTick emits high score persistence when score improves`` () =
     let model =
         { initModel with
             Game = modelGame
-            GameRunning = true
+            Phase = GamePhase.Running
             PlayerName = "  Finn  "
             HighScore = Some { Name = "A"; Score = 5 }
-            SplashVisible = false
             ScoresLoading = false }
 
     let result = Loop.applyTick model
@@ -378,6 +373,7 @@ let ``ensureFoodsForModel spawns multiple upcoming tokens`` () =
         { initModel with
             Game = game
             TargetText = "abcd"
+            PhraseQueue = []
             TargetIndex = 1 }
         |> Loop.ensureFoodsForModel
 
@@ -392,22 +388,21 @@ let ``ensureFoodsForModel spawns multiple upcoming tokens`` () =
 let ``StartGame hides splash and queues countdown`` () =
     let model =
         { initModel with
-            SplashVisible = true
+            Phase = GamePhase.Splash
             ScoresLoading = false
-            CountdownMs = 5000 }
+            CountdownMs = Config.gameplay.StartCountdownMs }
 
     let updated, cmd = Update.update StartGame model
 
-    Assert.False(updated.SplashVisible)
-    Assert.False(updated.GameRunning)
-    Assert.Equal(5000, updated.CountdownMs)
+    Assert.Equal(GamePhase.Countdown, updated.Phase)
+    Assert.Equal(Config.gameplay.StartCountdownMs, updated.CountdownMs)
     Assert.True(cmdHasEffects cmd)
 
 [<Fact>]
 let ``StartGame ignored when splash already hidden`` () =
     let model =
         { initModel with
-            SplashVisible = false
+            Phase = GamePhase.Running
             ScoresLoading = false
             CountdownMs = 2000 }
 
@@ -419,9 +414,9 @@ let ``StartGame ignored when splash already hidden`` () =
 let ``StartGame ignored while scores still loading`` () =
     let model =
         { initModel with
-            SplashVisible = true
+            Phase = GamePhase.Splash
             ScoresLoading = true
-            CountdownMs = 5000 }
+            CountdownMs = Config.gameplay.StartCountdownMs }
 
     let updated, cmd = Update.update StartGame model
     Assert.Equal(model, updated)
@@ -436,7 +431,7 @@ let ``ScoresLoaded sorts entries and updates high score`` () =
 
     let model =
         { initModel with
-            SplashVisible = true
+            Phase = GamePhase.Splash
             ScoresLoading = true
             HighScore = None }
 
@@ -469,8 +464,9 @@ let ``ensureFoodsForModel seeds up to configured maximum`` () =
     let seeded =
         { initModel with
             TargetText = target
+            PhraseQueue = []
             TargetIndex = 0
-            SplashVisible = false
+            Phase = GamePhase.Running
             ScoresLoading = false
             Game = Game.initialState () }
         |> Loop.ensureFoodsForModel
@@ -483,3 +479,5 @@ let ``ensureFoodsForModel seeds up to configured maximum`` () =
     let expectedCount = min Config.gameplay.MaxVisibleFoods target.Length
     Assert.Equal(expectedCount, active.Length)
     Assert.Equal< int list >([0 .. expectedCount - 1], active |> List.map (fun token -> token.LetterIndex))
+
+

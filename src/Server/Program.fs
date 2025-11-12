@@ -13,6 +13,7 @@ open System.Text.Json
 open System.Text.Json.Serialization
 open Serilog
 open System
+open System.IO
 open Eel.Server.Services
 open Eel.Server.HttpHandlers
 open Shared
@@ -32,6 +33,15 @@ let connectionString =
     | null -> defaultConnection
     | value when String.IsNullOrWhiteSpace value -> defaultConnection
     | value -> value
+
+let vocabularyCsvPath =
+    Path.Combine(builder.Environment.ContentRootPath, "vocabularies", "french_vocabularies_balticsea.csv")
+
+let vocabularySeed =
+    let entries = VocabularySeed.loadFromCsv vocabularyCsvPath
+    if List.isEmpty entries then
+        Log.Warning("Vocabulary seed file '{Path}' missing or empty.", vocabularyCsvPath)
+    entries
 
 builder.Host.UseSerilog() |> ignore
 
@@ -58,6 +68,8 @@ let serializerFactory =
 builder.Services.AddScoped(typeof<Giraffe.Json.ISerializer>, serializerFactory) |> ignore
 builder.Services.AddSingleton<IScoreRepository>(fun _ -> PostgresScoreRepository(connectionString) :> IScoreRepository) |> ignore
 builder.Services.AddSingleton<HighScoreStore>() |> ignore
+builder.Services.AddSingleton<IVocabularyRepository>(fun _ -> PostgresVocabularyRepository(connectionString, vocabularySeed) :> IVocabularyRepository)
+|> ignore
 builder.Services.AddCors(fun options ->
     options.AddPolicy(
         "AllowClient",
