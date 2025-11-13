@@ -45,6 +45,18 @@ let vocabularySeed =
 
 builder.Host.UseSerilog() |> ignore
 
+let defaultCorsOrigins =
+    [| "http://localhost:5173"
+       "https://localhost:5173"
+       "http://localhost:5000"
+       "https://localhost:5000" |]
+
+let configuredCorsOrigins =
+    match builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() with
+    | null
+    | [||] -> defaultCorsOrigins
+    | origins -> origins
+
 builder.Services.AddGiraffe() |> ignore
 builder.Services
     .AddOptions<JsonSerializerOptions>()
@@ -75,9 +87,7 @@ builder.Services.AddCors(fun options ->
         "AllowClient",
         fun policy ->
             policy
-                .WithOrigins(
-                    "http://localhost:5173",
-                    "https://localhost:5173")
+                .WithOrigins(configuredCorsOrigins)
                 .AllowAnyHeader()
                 .AllowAnyMethod()
                 |> ignore))

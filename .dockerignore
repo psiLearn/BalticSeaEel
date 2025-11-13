@@ -1,0 +1,11 @@
+.git
+.gitignore
+bin
+obj
+dist
+postgres-data
+terraform/.terraform
+terraform/**/*.tfstate*
+node_modules
+npm-debug.log*
+Dockerfile.postgres

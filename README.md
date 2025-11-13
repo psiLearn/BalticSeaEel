@@ -153,6 +153,10 @@ For JS/Fable tests, wrap `npm run test:client:fable` with [nyc](https://github.c
 
 Swagger/OpenAPI is generated automatically via [Giraffe.OpenApi](https://github.com/giraffe-fsharp/Giraffe.OpenApi). When the server runs in development mode, browse to `https://localhost:5001/swagger` (or `http://localhost:5000/swagger`) to inspect the live contract.
 
+### CORS configuration
+
+The server reads allowed origins from `src/Server/appsettings.json` (`Cors:AllowedOrigins`). Update that list for Docker/production deployments to match the domains serving the SPA.
+
 ### VS Code integration
 
 - Install the recommended workspace extensions and open the Testing panel to discover both `Client.Tests` and `Server.Tests`.
