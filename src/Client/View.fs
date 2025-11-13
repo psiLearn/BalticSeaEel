@@ -28,6 +28,13 @@ let private directionToAngle direction =
     | Direction.Left -> Math.PI
     | Direction.Right -> 0.0
 
+let private highlightForSegment model idx =
+    if model.HighlightActive then
+        let distance = abs (model.HighlightProgress - float idx)
+        if distance < 1.0 then 1.0 - distance else 0.0
+    else
+        0.0
+
 #if FABLE_COMPILER
 [<Import("useRef", "react")>]
 let private reactUseRef<'T> (value: 'T) : obj = jsNative
@@ -80,20 +87,26 @@ let private prepareCanvas (canvas: HTMLCanvasElement) boardWidth boardHeight =
     ctx.scale(dpr, dpr)
     ctx, pixelWidth, pixelHeight
 
-let private drawBoard (canvas: HTMLCanvasElement) (model: Model) =
-    let boardWidth = Game.boardWidth
-    let boardHeight = Game.boardHeight
-    let ctx, pixelWidth, pixelHeight = prepareCanvas canvas boardWidth boardHeight
+let private boardLetterFor (model: Model) (point: Point) =
+    let index = point.Y * Game.boardWidth + point.X
+    if index >= 0 && index < model.BoardLetters.Length then
+        model.BoardLetters.[index]
+    else
+        ""
 
-    ctx.clearRect (0., 0., pixelWidth, pixelHeight)
+let private drawGridCells (ctx: CanvasRenderingContext2D) (model: Model) =
+    for y in 0 .. Game.boardHeight - 1 do
+        for x in 0 .. Game.boardWidth - 1 do
+            let drawX = canvasPadding + float x * cellStep
+            let drawY = canvasPadding + float y * cellStep
+            ctx?fillStyle <- "rgba(255,255,255,0.04)"
+            ctx.fillRect (drawX, drawY, cellSize, cellSize)
 
-    let boardLetterFor (point: Point) =
-        let index = point.Y * boardWidth + point.X
-        if index >= 0 && index < model.BoardLetters.Length then
-            model.BoardLetters.[index]
-        else
-            ""
+            let letter = boardLetterFor model { X = x; Y = y }
+            if not (String.IsNullOrWhiteSpace letter) then
+                drawLetter ctx letter drawX drawY 0.0 0.0
 
+let private drawFoodTokens (ctx: CanvasRenderingContext2D) (model: Model) =
     let nextLetter = nextTargetChar model |> Option.map displayChar
 
     let tokenLetter token =
@@ -106,50 +119,25 @@ let private drawBoard (canvas: HTMLCanvasElement) (model: Model) =
             else
                 "?"
 
-    let foodMap =
-        model.Game.Foods
-        |> List.map (fun token -> token.Position, token)
-        |> Map.ofList
+    model.Game.Foods
+    |> List.iter (fun token ->
+        let drawX = canvasPadding + float token.Position.X * cellStep
+        let drawY = canvasPadding + float token.Position.Y * cellStep
+        let letter = tokenLetter token
 
-    for y in 0 .. boardHeight - 1 do
-        for x in 0 .. boardWidth - 1 do
-            let drawX = canvasPadding + float x * cellStep
-            let drawY = canvasPadding + float y * cellStep
-            ctx?fillStyle <- "rgba(255,255,255,0.04)"
+        match token.Status with
+        | FoodStatus.Active ->
+            ctx?fillStyle <- "rgba(88,161,107,0.8)"
+            ctx.beginPath()
+            ctx.arc (drawX + cellSize / 2., drawY + cellSize / 2., cellSize / 2.6, 0., Math.PI * 2.)
+            ctx.fill()
+            if letter <> "" then drawLetter ctx letter drawX drawY 0.0 0.0
+        | FoodStatus.Collected ->
+            ctx?fillStyle <- "rgba(255,255,255,0.15)"
             ctx.fillRect (drawX, drawY, cellSize, cellSize)
-            let point = { X = x; Y = y }
-            match Map.tryFind point foodMap with
-            | Some token ->
-                let letter = tokenLetter token
-                match token.Status with
-                | FoodStatus.Active ->
-                    ctx?fillStyle <- "rgba(88,161,107,0.8)"
-                    ctx.beginPath()
-                    ctx.arc (drawX + cellSize / 2., drawY + cellSize / 2., cellSize / 2.6, 0., Math.PI * 2.)
-                    ctx.fill()
-                    if letter <> "" then drawLetter ctx letter drawX drawY 0.0 0.0
-                | FoodStatus.Collected ->
-                    ctx?fillStyle <- "rgba(255,255,255,0.15)"
-                    ctx.fillRect (drawX, drawY, cellSize, cellSize)
-                    if letter <> "" then drawLetter ctx letter drawX drawY 0.0 0.0
-            | None ->
-                let letter = boardLetterFor point
-                if letter <> "" then drawLetter ctx letter drawX drawY 0.0 0.0
+            if letter <> "" then drawLetter ctx letter drawX drawY 0.0 0.0)
 
-    let built, _ = progressParts model
-    let builtChars = built |> Seq.toList
-
-    let assignedLetters =
-        builtChars
-        |> List.mapi (fun idx ch -> idx, displayChar ch)
-        |> List.fold
-            (fun state (idx, letter) ->
-                if idx < model.Game.Eel.Length - 1 then
-                    state |> Map.add idx letter
-                else
-                    state)
-            Map.empty
-
+let private drawSegments (ctx: CanvasRenderingContext2D) (model: Model) =
     let currentSegmentsRaw = model.Game.Eel |> List.toArray
     let previousSegmentsRaw = model.LastEel |> List.toArray
     let maxSegments = max 1 (max currentSegmentsRaw.Length previousSegmentsRaw.Length)
@@ -182,8 +170,22 @@ let private drawBoard (canvas: HTMLCanvasElement) (model: Model) =
             0.0
 
     let fallbackLetter point =
-        let baseLetter = boardLetterFor point
+        let baseLetter = boardLetterFor model point
         if String.IsNullOrWhiteSpace baseLetter then "·" else baseLetter
+
+    let built, _ = progressParts model
+    let builtChars = built |> Seq.toList
+
+    let assignedLetters =
+        builtChars
+        |> List.mapi (fun idx ch -> idx, displayChar ch)
+        |> List.fold
+            (fun state (idx, letter) ->
+                if idx < model.Game.Eel.Length - 1 then
+                    state |> Map.add idx letter
+                else
+                    state)
+            Map.empty
 
     for idx in 0 .. maxSegments - 1 do
         let prev = previousSegments.[idx]
@@ -218,25 +220,26 @@ let private drawBoard (canvas: HTMLCanvasElement) (model: Model) =
         ctx.fillRect (-cellSize / 2., -cellSize / 2., cellSize, cellSize)
         ctx.restore()
 
-        let highlightStrength =
-            if model.HighlightActive then
-                let distance = abs (model.HighlightProgress - float idx)
-                if distance < 1.0 then 1.0 - distance else 0.0
-            else
-                0.0
-
-        let letterRotation =
-            if Config.gameplay.RotateSegmentLetters then
-                appliedRotation + Math.PI
-            else
-                0.0
+        let highlightStrength = highlightForSegment model idx
 
         match Map.tryFind idx assignedLetters with
         | Some letter when not (String.IsNullOrWhiteSpace letter) ->
-            drawLetter ctx letter x y letterRotation highlightStrength
+            drawLetter ctx letter x y (appliedRotation + Math.PI) highlightStrength
         | _ ->
             if idx <> maxSegments - 1 then
-                drawLetter ctx (fallbackLetter curr) x y letterRotation highlightStrength
+                let fallback = fallbackLetter curr
+                if fallback <> "" then drawLetter ctx fallback x y (appliedRotation + Math.PI) highlightStrength
+let private drawBoard (canvas: HTMLCanvasElement) (model: Model) =
+    let boardWidth = Game.boardWidth
+    let boardHeight = Game.boardHeight
+    let ctx, pixelWidth, pixelHeight = prepareCanvas canvas boardWidth boardHeight
+
+    ctx.clearRect (0., 0., pixelWidth, pixelHeight)
+    drawGridCells ctx model
+    drawFoodTokens ctx model
+    drawSegments ctx model
+
+
 
 let private boardCanvas =
     FunctionComponent.Of(

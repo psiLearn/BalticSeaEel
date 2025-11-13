@@ -1,7 +1,9 @@
 module Eel.Client.Api
 
 open System
+#if FABLE_COMPILER
 open Browser.Dom
+#endif
 open Elmish
 open Fable.Core
 open Fable.Core.JsInterop
@@ -17,6 +19,7 @@ let inline private toJson (value: obj) = JS.JSON.stringify value
 let private log category message = printfn "[Api|%s] %s" category message
 
 let private apiBaseUrl =
+#if FABLE_COMPILER
     let configured: obj = window?__API_BASE_URL
 
     match configured with
@@ -40,6 +43,9 @@ let private apiBaseUrl =
         | false ->
             log "Config" $"Using origin '{origin}' as API base URL."
             origin
+#else
+    "http://localhost:5000"
+#endif
 
 let private combineUrl (baseUrl: string) (path: string) =
     match path.StartsWith("http://") || path.StartsWith("https://") with
@@ -52,6 +58,7 @@ let private combineUrl (baseUrl: string) (path: string) =
             | true -> baseUrl.TrimEnd('/') + path
             | false -> baseUrl + path
 
+#if FABLE_COMPILER
 let private fetch (path: string) (init: obj option) : JS.Promise<obj> =
     let url = combineUrl apiBaseUrl path
 
@@ -73,6 +80,12 @@ let private withTimeout timeoutMs (promise: JS.Promise<'T>) : JS.Promise<'T> =
 
     JS.Constructors.Promise.race [| promise :> obj; timeoutPromise :> obj |]
     |> unbox<JS.Promise<'T>>
+#else
+let private fetch _ _ : JS.Promise<obj> =
+    failwith "fetch is only available in the Fable/JS build."
+
+let private withTimeout _ promise = promise
+#endif
 
 let fetchHighScore (_: unit) =
     promise {
