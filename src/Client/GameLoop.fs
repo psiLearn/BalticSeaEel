@@ -60,7 +60,8 @@ let private phraseCompleted (model: Model) (currentGame: GameState) =
         SpeedMs = newSpeed
         CountdownMs = levelCountdownMs
         Phase = GamePhase.Countdown
-        NeedsNextPhrase = true },
+        NeedsNextPhrase = true
+        TargetIndex = 0 },
     newSpeed
 
 let maxVisibleFoods = Config.gameplay.MaxVisibleFoods
@@ -79,9 +80,13 @@ let ensureUpcomingFoods (model: Model) (state: GameState) =
             |> List.fold (fun acc idx -> Game.spawnFood idx acc) state
 
 let ensureFoodsForModel (model: Model) =
-    { model with
-        Game = ensureUpcomingFoods model model.Game
-        BoardLetters = ensureBoardLetters model.BoardLetters }
+    let withBoard =
+        { model with BoardLetters = ensureBoardLetters model.BoardLetters }
+
+    if model.NeedsNextPhrase then
+        withBoard
+    else
+        { withBoard with Game = ensureUpcomingFoods model withBoard.Game }
 
 let applyTick (model: Model) : TickResult =
     let movedGame = Game.move model.Game

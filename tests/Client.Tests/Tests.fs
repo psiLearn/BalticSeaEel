@@ -11,6 +11,8 @@ module Game = Shared.Game
 module Update = Eel.Client.Update
 module Loop = Eel.Client.GameLoop
 
+let tickDelta = 40
+
 let private withTarget target index =
     { initModel with
         TargetText = target
@@ -117,7 +119,7 @@ let ``update Tick stops loop when game already over`` () =
             ScoresLoading = false }
     let model = { model with PendingMoveMs = model.SpeedMs }
 
-    let updated, cmd = Update.update Tick model
+    let updated, cmd = Update.update (Tick tickDelta) model
 
     Assert.False(ModelState.isRunning updated.Phase)
     Assert.True(updated.Game.GameOver)
@@ -148,7 +150,7 @@ let ``update Tick advances target when collecting letter`` () =
             ScoresLoading = false }
     let model = { model with PendingMoveMs = model.SpeedMs }
 
-    let updated, cmd = Update.update Tick model
+    let updated, cmd = Update.update (Tick tickDelta) model
 
     Assert.True(ModelState.isRunning updated.Phase)
     Assert.Equal(1, updated.TargetIndex)
@@ -172,14 +174,14 @@ let ``update Tick accumulates pending before movement`` () =
             ScoresLoading = false
             PendingMoveMs = 0 }
 
-    let updated, cmd = Update.update Tick model
+    let updated, cmd = Update.update (Tick tickDelta) model
 
     Assert.Equal<Point list>(game.Eel, updated.Game.Eel)
     Assert.Equal(model.PendingMoveMs + 40, updated.PendingMoveMs)
     Assert.True(cmdIsEmpty cmd)
 
 [<Fact>]
-let ``update Tick performs at most one move per frame`` () =
+let ``update Tick catches up when pending spans multiple moves`` () =
     let head = { X = 10; Y = 10 }
 
     let game =
@@ -195,10 +197,10 @@ let ``update Tick performs at most one move per frame`` () =
             ScoresLoading = false
             PendingMoveMs = initModel.SpeedMs * 2 }
 
-    let updated, _ = Update.update Tick model
+    let updated, _ = Update.update (Tick tickDelta) model
     let movedHead = updated.Game.Eel |> List.head
 
-    Assert.Equal(head.X + 1, movedHead.X)
+    Assert.Equal(head.X + 2, movedHead.X)
     Assert.True(updated.PendingMoveMs < updated.SpeedMs)
 
 [<Fact>]
@@ -212,8 +214,8 @@ let ``ChangeDirection queues when mid step`` () =
 
     let updated, _ = Update.update (ChangeDirection Direction.Up) model
 
-    Assert.Equal(Direction.Right, updated.Game.Direction)
-    Assert.Equal(Some Direction.Up, updated.QueuedDirection)
+    Assert.Equal(Direction.Up, updated.Game.Direction)
+    Assert.Equal<Direction list>([ Direction.Up ], updated.DirectionQueue)
 
 [<Fact>]
 let ``queued direction applies after full step`` () =
@@ -227,10 +229,10 @@ let ``queued direction applies after full step`` () =
     let queued, _ = Update.update (ChangeDirection Direction.Up) model
     let ready = { queued with PendingMoveMs = queued.SpeedMs }
 
-    let updated, _ = Update.update Tick ready
+    let updated, _ = Update.update (Tick tickDelta) ready
 
     Assert.Equal(Direction.Up, updated.Game.Direction)
-    Assert.Equal(None, updated.QueuedDirection)
+    Assert.Equal<Direction list>([], updated.DirectionQueue)
 
 [<Fact>]
 let ``ChangeDirection applies immediately when aligned`` () =
@@ -244,7 +246,7 @@ let ``ChangeDirection applies immediately when aligned`` () =
     let updated, _ = Update.update (ChangeDirection Direction.Up) model
 
     Assert.Equal(Direction.Up, updated.Game.Direction)
-    Assert.Equal(None, updated.QueuedDirection)
+    Assert.Equal<Direction list>([ Direction.Up ], updated.DirectionQueue)
 
 [<Fact>]
 let ``ChangeDirection queues while mid step`` () =
@@ -257,8 +259,28 @@ let ``ChangeDirection queues while mid step`` () =
 
     let updated, _ = Update.update (ChangeDirection Direction.Up) midModel
 
-    Assert.Equal(Direction.Right, updated.Game.Direction)
-    Assert.Equal(Some Direction.Up, updated.QueuedDirection)
+    Assert.Equal(Direction.Up, updated.Game.Direction)
+    Assert.Equal<Direction list>([ Direction.Up ], updated.DirectionQueue)
+
+[<Fact>]
+let ``multiple inputs buffer sequential turns`` () =
+    let baseModel =
+        { initModel with
+            Game = { Game.initialState () with Direction = Direction.Right }
+            Phase = GamePhase.Running
+            ScoresLoading = false
+            PendingMoveMs = initModel.SpeedMs / 2 }
+
+    let first, _ = Update.update (ChangeDirection Direction.Up) baseModel
+    let second, _ = Update.update (ChangeDirection Direction.Left) first
+
+    Assert.Equal(Direction.Up, second.Game.Direction)
+    Assert.Equal<Direction list>([ Direction.Up; Direction.Left ], second.DirectionQueue)
+
+    let ready = { second with PendingMoveMs = second.SpeedMs }
+    let afterFirstTurn, _ = Update.update (Tick tickDelta) ready
+    Assert.Equal(Direction.Up, afterFirstTurn.Game.Direction)
+    Assert.Equal<Direction list>([ Direction.Left ], afterFirstTurn.DirectionQueue)
 
 
 [<Fact>]
@@ -310,7 +332,7 @@ let ``applyTick completes phrase and prepares next round`` () =
     let result = Loop.applyTick model
 
     Assert.False(ModelState.isRunning result.Model.Phase)
-    Assert.Equal("", result.Model.TargetText)
+    Assert.Equal("hi", result.Model.TargetText)
     Assert.Equal(0, result.Model.TargetIndex)
     Assert.Equal(Config.gameplay.LevelCountdownMs, result.Model.CountdownMs)
     Assert.Equal<string list>([ "example phrase" ], result.Model.PhraseQueue)
