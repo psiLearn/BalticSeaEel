@@ -24,6 +24,7 @@ let private tickIntervalMs = 40
 let private startCountdownMs = Config.gameplay.StartCountdownMs
 let private levelCountdownMs = Config.gameplay.LevelCountdownMs
 let private highlightSpeedSegmentsPerMs = 0.004
+let private maxDirectionQueue = 3
 
 let private log category message = printfn "[Update|%s] %s" category message
 
@@ -112,9 +113,11 @@ let private tryStopATick key =
     if not (isNullOrUndefined countdownObj) then
         match countdownObj with
         | :? float as id ->
+            window.cancelAnimationFrame id
             window.clearInterval id
             window.clearTimeout id
         | :? int as id ->
+            window.cancelAnimationFrame (float id)
             window.clearInterval id
             window.clearTimeout id
         | _ -> ()
@@ -125,6 +128,21 @@ let private tryStopCountdown () =
     tryStopATick countdownKey
 let private tryStopTick () =
     tryStopATick tickKey
+
+let private isOppositeDirection a b =
+    match a, b with
+    | Direction.Up, Direction.Down
+    | Direction.Down, Direction.Up
+    | Direction.Left, Direction.Right
+    | Direction.Right, Direction.Left -> true
+    | _ -> false
+
+let private enqueueDirection queue direction =
+    let appended = queue @ [ direction ]
+    if appended.Length <= maxDirectionQueue then
+        appended
+    else
+        appended |> List.skip (appended.Length - maxDirectionQueue)
 
 let private tryCleanupPrevious () =
     let cleanupObj: obj = window?(cleanupKey)
@@ -210,19 +228,33 @@ let private handleTickResult (result: GameLoop.TickResult) =
 
 let startLoopCmd () : Cmd<Msg> =
     Cmd.ofEffect (fun dispatch ->
-        log "Loop" $"Starting loop with tick interval {tickIntervalMs} ms."
+        log "Loop" $"Starting loop with target tick interval {tickIntervalMs} ms."
         tryCleanupPrevious ()
 
         let loopToken = System.Guid.NewGuid().ToString()
         window?loopTokenKey <- loopToken
 
-        let intervalId =
-            window.setInterval (
-                (fun _ ->
+        let rec schedule lastTimestamp =
+            let frameId =
+                window.requestAnimationFrame(fun timestamp ->
                     if window?loopTokenKey = loopToken then
-                        dispatch Tick),
-                tickIntervalMs)
-        window?(tickKey) <- intervalId
+                        let elapsed =
+                            match lastTimestamp with
+                            | Some previous -> timestamp - previous
+                            | None -> float tickIntervalMs
+
+                        let deltaMs =
+                            elapsed
+                            |> max 1.0
+                            |> min 250.0
+                            |> int
+
+                        dispatch (Tick deltaMs)
+                        schedule (Some timestamp))
+
+            window?(tickKey) <- frameId
+
+        schedule None
 
         let handleKey (ev: KeyboardEvent) =
             let isTypingTarget =
@@ -273,12 +305,10 @@ let startLoopCmd () : Cmd<Msg> =
 
         let rec cleanup () =
             log "Loop" "Cleaning up loop and event handlers."
-            window.clearInterval intervalId
-            window.clearTimeout intervalId
+            tryStopTick()
             window.removeEventListener ("keydown", handleKeyListener)
             window.removeEventListener ("beforeunload", unloadHandler)
             window?loopTokenKey <- null
-            tryStopTick()
             window?cleanupKey <- null
 
         and unloadHandler (_: Event) = cleanup ()
@@ -314,7 +344,7 @@ let update msg model =
                 CountdownMs = Config.gameplay.StartCountdownMs
                 Phase = GamePhase.Countdown
                 PendingMoveMs = 0
-                QueuedDirection = None
+                DirectionQueue = []
                 Error = None
                 ScoresError = None }
             |> withFreshLastEel
@@ -330,7 +360,7 @@ let update msg model =
             { model with
                 Phase = GamePhase.Paused
                 PendingMoveMs = 0
-                QueuedDirection = None
+                DirectionQueue = []
                 LastEel = model.Game.Eel },
             Cmd.none
         | GamePhase.Paused ->
@@ -338,7 +368,7 @@ let update msg model =
             { model with
                 Phase = GamePhase.Running
                 PendingMoveMs = 0
-                QueuedDirection = None
+                DirectionQueue = []
                 LastEel = model.Game.Eel },
             startLoopCmd ()
         | _ -> model, Cmd.none
@@ -362,7 +392,7 @@ let update msg model =
                     Phase = GamePhase.Running
                     CountdownMs = 0
                     PendingMoveMs = 0
-                    QueuedDirection = None }
+                    DirectionQueue = [] }
                 |> ensureNextPhrase
                 |> ensureFoodsForModel
                 |> withFreshLastEel
@@ -370,85 +400,105 @@ let update msg model =
             updatedModel, Cmd.batch [ stopCountdownCmd
                                       startLoopCmd () ]
         | _ -> model, Cmd.none
-    | Tick when not (ModelState.isRunning model.Phase) ->
+    | Tick deltaMs when not (ModelState.isRunning model.Phase) ->
         tryStopTick ()
         log "Loop" "Ignoring tick while game is paused."
         { model with
             PendingMoveMs = 0
-            QueuedDirection = None
+            DirectionQueue = []
             LastEel = model.Game.Eel },
         Cmd.none
-    | Tick ->
+    | Tick deltaMs ->
         match ModelState.isRunning model.Phase with
-        | false -> { model with PendingMoveMs = 0; QueuedDirection = None }, Cmd.none
+        | false -> { model with PendingMoveMs = 0; DirectionQueue = [] }, Cmd.none
         | true ->
-            let accumulator = model.PendingMoveMs + tickIntervalMs
+            let delta =
+                deltaMs
+                |> max 1
+                |> min 500
 
-            match accumulator < model.SpeedMs with
-            | true ->
-                let updated =
-                    { model with PendingMoveMs = accumulator }
-                    |> updateHighlightWave false tickIntervalMs
-                updated, Cmd.none
-            | false ->
-                let modelForMove =
-                    match model.QueuedDirection with
-                    | Some queued ->
-                        { model with
-                            Game = Game.changeDirection queued model.Game
-                            QueuedDirection = None }
-                    | None -> model
+            let rec processTicks currentModel pending deltaBudget collectedCmds =
+                if pending < currentModel.SpeedMs then
+                    let updated =
+                        { currentModel with PendingMoveMs = pending }
+                        |> updateHighlightWave false deltaBudget
+                    updated, pending, collectedCmds
+                else
+                    let modelForMove =
+                        match currentModel.DirectionQueue with
+                        | next :: rest ->
+                            { currentModel with
+                                Game = Game.changeDirection next currentModel.Game
+                                DirectionQueue = rest }
+                        | [] -> currentModel
 
-                let startSegments = modelForMove.Game.Eel
-                let result = GameLoop.applyTick modelForMove
-                let updatedModel, cmd = handleTickResult result
-                let remaining =
-                    accumulator - model.SpeedMs
-                    |> max 0
-                    |> min (model.SpeedMs - 1)
+                    let startSegments = modelForMove.Game.Eel
+                    let result = GameLoop.applyTick modelForMove
+                    let updatedModel, cmd = handleTickResult result
+                    let remaining =
+                        pending - currentModel.SpeedMs
+                        |> max 0
 
-                let letterCollected =
-                    result.Events
-                    |> List.exists (function
-                        | LetterCollected _ -> true
-                        | _ -> false)
+                    let letterCollected =
+                        result.Events
+                        |> List.exists (function
+                            | LetterCollected _ -> true
+                            | _ -> false)
 
-                let updatedModel =
-                    { updatedModel with
-                        PendingMoveMs = remaining
-                        LastEel = startSegments }
-                    |> updateHighlightWave letterCollected accumulator
+                    let updatedModel =
+                        { updatedModel with
+                            PendingMoveMs = remaining
+                            LastEel = startSegments }
+                        |> updateHighlightWave letterCollected currentModel.SpeedMs
 
-                updatedModel, cmd
+                    let consumedDelta = min deltaBudget currentModel.SpeedMs
+                    processTicks updatedModel remaining (max 0 (deltaBudget - consumedDelta)) (cmd :: collectedCmds)
+
+            let accumulator = model.PendingMoveMs + delta
+            let finalModel, remainder, cmdList = processTicks model accumulator delta []
+
+            let combinedCmd =
+                match cmdList |> List.rev with
+                | [] -> Cmd.none
+                | [ single ] -> single
+                | cmds -> Cmd.batch cmds
+
+            finalModel, combinedCmd
     | ChangeDirection direction ->
-        let currentDirection = model.Game.Direction
+        let queue = model.DirectionQueue
+        let referenceDirection =
+            match queue with
+            | [] -> model.Game.Direction
+            | _ -> queue |> List.last
 
-        if direction = currentDirection then
+        let ignoreInput =
+            direction = referenceDirection
+            || isOppositeDirection direction referenceDirection
+
+        if ignoreInput then
             model, Cmd.none
         else
-            match ModelState.isRunning model.Phase with
-            | true ->
-                let updatedQueued =
-                    match model.QueuedDirection with
-                    | Some existing when existing = direction -> model.QueuedDirection
-                    | _ -> Some direction
+            let isRunning = ModelState.isRunning model.Phase
+            let queueWasEmpty = List.isEmpty queue
+            let updatedQueue =
+                if isRunning then
+                    enqueueDirection queue direction
+                else
+                    []
 
-                match model.PendingMoveMs = 0 with
-                | true ->
-                    let updatedGame = Game.changeDirection direction model.Game
-                    { model with
-                        Game = updatedGame
-                        LastEel = updatedGame.Eel
-                        QueuedDirection = None },
-                    Cmd.none
-                | false -> { model with QueuedDirection = updatedQueued }, Cmd.none
-            | false ->
-                let updatedGame = Game.changeDirection direction model.Game
-                { model with
-                    Game = updatedGame
-                    LastEel = updatedGame.Eel
-                    QueuedDirection = Some direction },
-                Cmd.none
+            let shouldUpdateDirectionNow = (not isRunning) || queueWasEmpty
+
+            let updatedGame =
+                if shouldUpdateDirectionNow then
+                    Game.changeDirection direction model.Game
+                else
+                    model.Game
+
+            { model with
+                Game = updatedGame
+                LastEel = updatedGame.Eel
+                DirectionQueue = updatedQueue },
+            Cmd.none
     | Restart ->
         log "Game" "Restart requested."
         let restartQueue =
@@ -462,7 +512,7 @@ let update msg model =
                 TargetIndex = 0
                 SpeedMs = initialSpeed
                 PendingMoveMs = 0
-                QueuedDirection = None
+                DirectionQueue = []
                 CountdownMs = levelCountdownMs
                 Phase = GamePhase.Countdown
                 PhraseQueue = restartQueue
@@ -530,7 +580,7 @@ let update msg model =
                 ScoresLoading = false
                 CountdownMs = startCountdownMs
                 PendingMoveMs = 0
-                QueuedDirection = None }
+                DirectionQueue = [] }
              |> withFreshLastEel),
             Cmd.batch [ enableStartHotkeyCmd
                         fetchScoresCmd ]

@@ -26,7 +26,7 @@ type Model =
       HighlightActive: bool
       SpeedMs: int
       PendingMoveMs: int
-      QueuedDirection: Direction option
+      DirectionQueue: Direction list
       LastEel: Point list
       CountdownMs: int
       Phase: GamePhase
@@ -56,7 +56,7 @@ let isSaving phase =
     | _ -> false
 
 type Msg =
-    | Tick
+    | Tick of int
     | CountdownTick
     | CountdownFinished
     | StartGame
@@ -149,7 +149,7 @@ let initModel =
       HighlightActive = false
       SpeedMs = initialSpeed
       PendingMoveMs = 0
-      QueuedDirection = None
+      DirectionQueue = []
       LastEel = (Game.initialState ()).Eel
       CountdownMs = Config.gameplay.StartCountdownMs
       Phase = Splash

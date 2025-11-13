@@ -21,6 +21,12 @@ let private canvasPadding = 18.0
 let private cellSize = 26.0
 let private cellGap = 6.0
 let private cellStep = cellSize + cellGap
+let private directionToAngle direction =
+    match direction with
+    | Direction.Up -> -Math.PI / 2.
+    | Direction.Down -> Math.PI / 2.
+    | Direction.Left -> Math.PI
+    | Direction.Right -> 0.0
 
 #if FABLE_COMPILER
 [<Import("useRef", "react")>]
@@ -147,6 +153,13 @@ let private drawBoard (canvas: HTMLCanvasElement) (model: Model) =
     let currentSegmentsRaw = model.Game.Eel |> List.toArray
     let previousSegmentsRaw = model.LastEel |> List.toArray
     let maxSegments = max 1 (max currentSegmentsRaw.Length previousSegmentsRaw.Length)
+    let previewDirection =
+        match model.DirectionQueue with
+        | next :: _ -> next
+        | [] -> model.Game.Direction
+    let previewActive =
+        ModelState.isRunning model.Phase
+        && not (List.isEmpty model.DirectionQueue)
 
     let padSegments (segments: Point array) =
         match segments.Length with
@@ -174,22 +187,33 @@ let private drawBoard (canvas: HTMLCanvasElement) (model: Model) =
 
     for idx in 0 .. maxSegments - 1 do
         let prev = previousSegments.[idx]
-        let curr = currentSegments.[idx]
+        let prevX = float prev.X
+        let prevY = float prev.Y
+        let currentPoint = currentSegments.[idx]
+        let currX = float currentPoint.X
+        let currY = float currentPoint.Y
+        let curr = currentPoint
 
         let interpolate currentValue futureValue =
             currentValue + (futureValue - currentValue) * progress
 
-        let x = canvasPadding + interpolate (float prev.X) (float curr.X) * cellStep
-        let y = canvasPadding + interpolate (float prev.Y) (float curr.Y) * cellStep
+        let x = canvasPadding + interpolate prevX currX * cellStep
+        let y = canvasPadding + interpolate prevY currY * cellStep
 
-        let rotation =
-            let dx = float curr.X - float prev.X
-            let dy = float curr.Y - float prev.Y
+        let baseRotation =
+            let dx = currX - prevX
+            let dy = currY - prevY
             if abs dx < 0.001 && abs dy < 0.001 then 0.0 else Math.Atan2(dy, dx)
+
+        let appliedRotation =
+            if idx = 0 && previewActive then
+                directionToAngle previewDirection
+            else
+                baseRotation
 
         ctx.save()
         ctx.translate (x + cellSize / 2., y + cellSize / 2.)
-        ctx.rotate (rotation + (if idx = maxSegments - 1 then -Math.PI / 2. else 0.))
+        ctx.rotate (appliedRotation + (if idx = maxSegments - 1 then -Math.PI / 2. else 0.))
         ctx?fillStyle <- (if idx = 0 then "#4c7e7b" else "#2b4b4e")
         ctx.fillRect (-cellSize / 2., -cellSize / 2., cellSize, cellSize)
         ctx.restore()
@@ -203,7 +227,7 @@ let private drawBoard (canvas: HTMLCanvasElement) (model: Model) =
 
         let letterRotation =
             if Config.gameplay.RotateSegmentLetters then
-                rotation + Math.PI
+                appliedRotation + Math.PI
             else
                 0.0
 
