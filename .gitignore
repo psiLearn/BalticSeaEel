@@ -30,3 +30,9 @@ fable_modules/
 tests/Client.FableTests/Tests.fs.js
 TestResults/
 postgres-data/
+
+# Terraform local state
+terraform.tfstate
+terraform.tfstate.*
+.terraform/
+.terraform.lock.hcl
