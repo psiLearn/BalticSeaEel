@@ -21,25 +21,13 @@ Baltic Sea Eel is a SAFE-stack take on the classic snake formula. Each eel segme
 - Node.js 18+ with npm (`npm --version`)
 - PostgreSQL 15+ (local or containerised). The API reads the connection string from the `POSTGRES_CONNECTION` environment variable; if unset it defaults to `Host=localhost;Port=5432;Username=eel;Password=eel;Database=eel`.
 
-### Local PostgreSQL via Docker
+### Local stack via Docker Compose
 
-```powershell
-# build the slim postgres image
-docker build -f Dockerfile.postgres -t eel-postgres .
-# run it with a persistent volume in ./postgres-data (bash/zsh)
-docker run -d --name eel-postgres \
-  -p 5432:5432 \
-  -v $(pwd)/postgres-data:/var/lib/postgresql/data \
-  eel-postgres
-
-# PowerShell equivalent
-docker run -d --name eel-postgres `
-  -p 5432:5432 `
-  -v ${PWD}/postgres-data:/var/lib/postgresql/data `
-  eel-postgres
+```bash
+docker compose up --build
 ```
 
-Use the matching connection string (`POSTGRES_CONNECTION="Host=localhost;Port=5432;Username=eel;Password=eel;Database=eel"`) when running the server locally.
+The compose file builds the app image (client + server) and brings up Postgres with the default `eel/eel` credentials. Browse to `http://localhost:5000` and the server will use the internal connection string `Host=postgres;Port=5432;Username=eel;Password=eel;Database=eel`.
 
 ### Seeding vocabulary entries
 
@@ -118,6 +106,25 @@ dotnet publish src/Server/Server.fsproj
 ```
 
 The publish output contains both the compiled server and the static bundle produced by Vite.
+
+### Docker image
+
+```bash
+docker build -t eel-app .
+docker run -p 5000:5000 `
+  -e POSTGRES_CONNECTION="Host=localhost;Port=5432;Username=eel;Password=eel;Database=eel" `
+  eel-app
+```
+
+### AWS Infrastructure
+
+`terraform/aws` contains a baseline stack for AWS (VPC, Aurora Postgres, ECS/Fargate, ALB, Secrets Manager, ECR). Before running Terraform:
+
+1. Update the `backend "s3"` block in `main.tf` with your state bucket/key/region.
+2. Provide AWS credentials (env vars or profile).
+3. Run `terraform init` and `terraform apply -var="project=eel" -var="db_username=eel" -var="db_password=..."`.
+
+Push your Docker image to the ECR repo Terraform creates, then update the ECS service/task definition with the new tag. The ECS task reads `POSTGRES_CONNECTION` from Secrets Manager.
 
 ## Testing and coverage
 
