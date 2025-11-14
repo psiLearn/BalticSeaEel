@@ -21,25 +21,13 @@ Baltic Sea Eel is a SAFE-stack take on the classic snake formula. Each eel segme
 - Node.js 18+ with npm (`npm --version`)
 - PostgreSQL 15+ (local or containerised). The API reads the connection string from the `POSTGRES_CONNECTION` environment variable; if unset it defaults to `Host=localhost;Port=5432;Username=eel;Password=eel;Database=eel`.
 
-### Local PostgreSQL via Docker
+### Local stack via Docker Compose
 
-```powershell
-# build the slim postgres image
-docker build -f Dockerfile.postgres -t eel-postgres .
-# run it with a persistent volume in ./postgres-data (bash/zsh)
-docker run -d --name eel-postgres \
-  -p 5432:5432 \
-  -v $(pwd)/postgres-data:/var/lib/postgresql/data \
-  eel-postgres
-
-# PowerShell equivalent
-docker run -d --name eel-postgres `
-  -p 5432:5432 `
-  -v ${PWD}/postgres-data:/var/lib/postgresql/data `
-  eel-postgres
+```bash
+docker compose up --build
 ```
 
-Use the matching connection string (`POSTGRES_CONNECTION="Host=localhost;Port=5432;Username=eel;Password=eel;Database=eel"`) when running the server locally.
+The compose file builds the app image (client + server) and brings up Postgres with the default `eel/eel` credentials. Browse to `http://localhost:5000` and the server will use the internal connection string `Host=postgres;Port=5432;Username=eel;Password=eel;Database=eel`.
 
 ### Seeding vocabulary entries
 
@@ -89,6 +77,32 @@ Baltic Sea Eel pairs a Fable/Elmish client with a Giraffe API to build a vocabul
 
 With Docker you can spin up the Postgres container locally, seed vocabulary, and run both frontend and backend together via `npm run dev` and `dotnet watch run`.
 
+### Visual & highlight configuration
+
+Most of the rendering behaviour can be tweaked centrally in `src/Shared/Config.fs`:
+
+- `FoodVisuals` controls whether food letters are shown at all and which colours are used for active/collected tokens (default is to hide the letters for a cleaner board).
+- `BoardVisuals` sets the grid background colour, highlight opacity, and board-letter styling.
+- `FoodBurst` enables/disables the eel highlight wave, caps how many simultaneous waves may run, and scales their speed/brightness.
+
+Example:
+
+```fsharp
+FoodVisuals =
+    { ShowLetters = true
+      ActiveFill = "rgba(88,161,107,0.8)"
+      CollectedFill = "rgba(255,255,255,0.15)" }
+FoodBurst =
+    { Enabled = true
+      MaxConcurrentWaves = Some 3
+      WaveSpeedSegmentsPerMs = 0.001
+      LetterSizeFactor = 1.5
+      LetterWeightFactor = 1.3
+      SegmentWeightFactor = 0.8 }
+```
+
+Adjust these values and reload the client to experiment with different looks or to disable specific effects (e.g., set `FoodVisuals.ShowLetters = true` to restore letters on food tokens).
+
 ## Development
 
 ```powershell
@@ -119,6 +133,25 @@ dotnet publish src/Server/Server.fsproj
 
 The publish output contains both the compiled server and the static bundle produced by Vite.
 
+### Docker image
+
+```bash
+docker build -t eel-app .
+docker run -p 5000:5000 `
+  -e POSTGRES_CONNECTION="Host=localhost;Port=5432;Username=eel;Password=eel;Database=eel" `
+  eel-app
+```
+
+### AWS Infrastructure
+
+`terraform/aws` contains a baseline stack for AWS (VPC, Aurora Postgres, ECS/Fargate, ALB, Secrets Manager, ECR). Before running Terraform:
+
+1. Update the `backend "s3"` block in `main.tf` with your state bucket/key/region.
+2. Provide AWS credentials (env vars or profile).
+3. Run `terraform init` and `terraform apply -var="project=eel" -var="db_username=eel" -var="db_password=..."`.
+
+Push your Docker image to the ECR repo Terraform creates, then update the ECS service/task definition with the new tag. The ECS task reads `POSTGRES_CONNECTION` from Secrets Manager.
+
 ## Testing and coverage
 
 ```powershell
@@ -145,6 +178,14 @@ For JS/Fable tests, wrap `npm run test:client:fable` with [nyc](https://github.c
 ### API documentation
 
 Swagger/OpenAPI is generated automatically via [Giraffe.OpenApi](https://github.com/giraffe-fsharp/Giraffe.OpenApi). When the server runs in development mode, browse to `https://localhost:5001/swagger` (or `http://localhost:5000/swagger`) to inspect the live contract.
+
+### CORS configuration
+
+The server reads allowed origins from `src/Server/appsettings.json` (`Cors:AllowedOrigins`). Update that list for Docker/production deployments to match the domains serving the SPA.
+
+### Renderer toggle (canvas vs Konva)
+
+The board now supports both the original Canvas renderer and an experimental [Konva](https://konvajs.org/) renderer. By default the Canvas renderer is used. To switch to Konva in the browser, set `window.__RENDER_ENGINE__ = "konva"` before the app bootstraps (for example, via a small inline script in `index.html`). The Konva path shares the same render helpers, so it’s safe to experiment without affecting gameplay logic.
 
 ### VS Code integration
 

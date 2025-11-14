@@ -1,0 +1,30 @@
+version: "3.9"
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      - postgres
+    ports:
+      - "5000:5000"
+    environment:
+      POSTGRES_CONNECTION: >-
+        Host=postgres;Port=5432;Username=eel;Password=eel;Database=eel
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: eel
+      POSTGRES_PASSWORD: eel
+      POSTGRES_DB: eel
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+
+volumes:
+  postgres-data:

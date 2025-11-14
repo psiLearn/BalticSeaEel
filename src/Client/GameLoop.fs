@@ -61,7 +61,8 @@ let private phraseCompleted (model: Model) (currentGame: GameState) =
         CountdownMs = levelCountdownMs
         Phase = GamePhase.Countdown
         NeedsNextPhrase = true
-        TargetIndex = 0 },
+        TargetIndex = 0
+        LastCompletedPhrase = Some model.TargetText },
     newSpeed
 
 let maxVisibleFoods = Config.gameplay.MaxVisibleFoods

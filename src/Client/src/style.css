@@ -154,6 +154,60 @@ body {
   z-index: 5;
 }
 
+.board-overlay--countdown {
+  mix-blend-mode: screen;
+}
+
+.countdown-eel {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 4;
+}
+
+.countdown-eel-track {
+  position: relative;
+  width: 240px;
+  height: 240px;
+  animation: eel-orbit 16s linear infinite;
+}
+
+.countdown-eel-segment {
+  position: absolute;
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  background: linear-gradient(135deg, var(--color-eel-grad-start), var(--color-eel-grad-end));
+  box-shadow: inset 0 0 8px rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  color: var(--color-text-main);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.countdown-eel-segment.head {
+  box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.55), 0 0 14px rgba(0, 0, 0, 0.35);
+}
+
+.countdown-eel-segment.tail {
+  opacity: 0.8;
+}
+
+@keyframes eel-orbit {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(-360deg);
+  }
+}
+
 .eel-overlay {
   pointer-events: none;
 }
