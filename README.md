@@ -157,6 +157,10 @@ Swagger/OpenAPI is generated automatically via [Giraffe.OpenApi](https://github.
 
 The server reads allowed origins from `src/Server/appsettings.json` (`Cors:AllowedOrigins`). Update that list for Docker/production deployments to match the domains serving the SPA.
 
+### Renderer toggle (canvas vs Konva)
+
+The board now supports both the original Canvas renderer and an experimental [Konva](https://konvajs.org/) renderer. By default the Canvas renderer is used. To switch to Konva in the browser, set `window.__RENDER_ENGINE__ = "konva"` before the app bootstraps (for example, via a small inline script in `index.html`). The Konva path shares the same render helpers, so it’s safe to experiment without affecting gameplay logic.
+
 ### VS Code integration
 
 - Install the recommended workspace extensions and open the Testing panel to discover both `Client.Tests` and `Server.Tests`.

@@ -10,6 +10,9 @@
     <Compile Include="Api.fs" />
     <Compile Include="GameLoop.fs" />
     <Compile Include="Update.fs" />
+    <Compile Include="Rendering/Shared.fs" />
+    <Compile Include="Rendering/CanvasRenderer.fs" />
+    <Compile Include="Rendering/KonvaRenderer.fs" />
     <Compile Include="View.fs" />
     <Compile Include="App.fs" />
   </ItemGroup>

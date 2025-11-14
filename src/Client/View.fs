@@ -3,7 +3,6 @@ module Eel.Client.View
 open System
 #if FABLE_COMPILER
 open Browser.Types
-open Browser.Dom
 #endif
 
 open Fable.Core
@@ -14,274 +13,49 @@ open Elmish
 open Eel.Client.Model
 open Shared
 open Shared.Game
+open Eel.Client.Rendering.Shared
+
+module CanvasRenderer = Eel.Client.Rendering.CanvasRenderer
+#if FABLE_COMPILER
+module KonvaRenderer = Eel.Client.Rendering.KonvaRenderer
+#endif
 
 module ModelState = Eel.Client.Model
 
-let private canvasPadding = 18.0
-let private cellSize = 26.0
-let private cellGap = 6.0
-let private cellStep = cellSize + cellGap
-let private directionToAngle direction =
-    match direction with
-    | Direction.Up -> -Math.PI / 2.
-    | Direction.Down -> Math.PI / 2.
-    | Direction.Left -> Math.PI
-    | Direction.Right -> 0.0
-
-#if FABLE_COMPILER
-[<Import("useRef", "react")>]
-let private reactUseRef<'T> (value: 'T) : obj = jsNative
-
-[<Import("useEffect", "react")>]
-let private reactUseEffect (callback: unit -> unit) (deps: obj array) : unit = jsNative
-
-let private boardPixelSize dimension =
-    (float dimension * cellStep) - cellGap + (2.0 * canvasPadding)
-
-let private drawLetter (ctx: CanvasRenderingContext2D) text x y rotation highlight =
-    ctx?save()
-    ctx?translate(x + cellSize / 2., y + cellSize / 2.)
-    if rotation <> 0.0 then
-        ctx?rotate(rotation)
-
-    let baseColor = "#e6ecec"
-    let color =
-        if highlight <= 0.0 then
-            baseColor
-        else
-            let alpha = min 1.0 (0.6 + (0.4 * highlight))
-            $"rgba(255,255,255,{alpha})"
-
-    let fontSize = 14.0 + (6.0 * highlight)
-    ctx?fillStyle <- color
-    ctx.font <- $"bold {fontSize}px 'Segoe UI'"
-    ctx?textAlign <- "center"
-    ctx?textBaseline <- "middle"
-    ctx.fillText (text, 0., 0.)
-    ctx?restore()
-
-let private prepareCanvas (canvas: HTMLCanvasElement) boardWidth boardHeight =
-    let pixelWidth = boardPixelSize boardWidth
-    let pixelHeight = boardPixelSize boardHeight
-    let dpr =
-        if isNull window || window.devicePixelRatio <= 0.0 then 1.0 else window.devicePixelRatio
-
-    canvas?style?width <- $"{pixelWidth}px"
-    canvas?style?height <- $"{pixelHeight}px"
-
-    let scaledWidth = pixelWidth * dpr |> int
-    let scaledHeight = pixelHeight * dpr |> int
-
-    if canvas.width <> scaledWidth then canvas.width <- scaledWidth
-    if canvas.height <> scaledHeight then canvas.height <- scaledHeight
-
-    let ctx = canvas.getContext_2d()
-    ctx.setTransform(1., 0., 0., 1., 0., 0.)
-    ctx.scale(dpr, dpr)
-    ctx, pixelWidth, pixelHeight
-
-let private drawBoard (canvas: HTMLCanvasElement) (model: Model) =
-    let boardWidth = Game.boardWidth
-    let boardHeight = Game.boardHeight
-    let ctx, pixelWidth, pixelHeight = prepareCanvas canvas boardWidth boardHeight
-
-    ctx.clearRect (0., 0., pixelWidth, pixelHeight)
-
-    let boardLetterFor (point: Point) =
-        let index = point.Y * boardWidth + point.X
-        if index >= 0 && index < model.BoardLetters.Length then
-            model.BoardLetters.[index]
-        else
-            ""
-
-    let nextLetter = nextTargetChar model |> Option.map displayChar
-
-    let tokenLetter token =
-        match token.Status, nextLetter with
-        | FoodStatus.Active, Some letter -> letter
-        | FoodStatus.Active, None -> ""
-        | FoodStatus.Collected, _ ->
-            if token.LetterIndex >= 0 && token.LetterIndex < model.TargetText.Length then
-                displayChar model.TargetText.[token.LetterIndex]
-            else
-                "?"
-
-    let foodMap =
-        model.Game.Foods
-        |> List.map (fun token -> token.Position, token)
-        |> Map.ofList
-
-    for y in 0 .. boardHeight - 1 do
-        for x in 0 .. boardWidth - 1 do
-            let drawX = canvasPadding + float x * cellStep
-            let drawY = canvasPadding + float y * cellStep
-            ctx?fillStyle <- "rgba(255,255,255,0.04)"
-            ctx.fillRect (drawX, drawY, cellSize, cellSize)
-            let point = { X = x; Y = y }
-            match Map.tryFind point foodMap with
-            | Some token ->
-                let letter = tokenLetter token
-                match token.Status with
-                | FoodStatus.Active ->
-                    ctx?fillStyle <- "rgba(88,161,107,0.8)"
-                    ctx.beginPath()
-                    ctx.arc (drawX + cellSize / 2., drawY + cellSize / 2., cellSize / 2.6, 0., Math.PI * 2.)
-                    ctx.fill()
-                    if letter <> "" then drawLetter ctx letter drawX drawY 0.0 0.0
-                | FoodStatus.Collected ->
-                    ctx?fillStyle <- "rgba(255,255,255,0.15)"
-                    ctx.fillRect (drawX, drawY, cellSize, cellSize)
-                    if letter <> "" then drawLetter ctx letter drawX drawY 0.0 0.0
-            | None ->
-                let letter = boardLetterFor point
-                if letter <> "" then drawLetter ctx letter drawX drawY 0.0 0.0
-
-    let built, _ = progressParts model
-    let builtChars = built |> Seq.toList
-
-    let assignedLetters =
-        builtChars
-        |> List.mapi (fun idx ch -> idx, displayChar ch)
-        |> List.fold
-            (fun state (idx, letter) ->
-                if idx < model.Game.Eel.Length - 1 then
-                    state |> Map.add idx letter
-                else
-                    state)
-            Map.empty
-
-    let currentSegmentsRaw = model.Game.Eel |> List.toArray
-    let previousSegmentsRaw = model.LastEel |> List.toArray
-    let maxSegments = max 1 (max currentSegmentsRaw.Length previousSegmentsRaw.Length)
-    let previewDirection =
-        match model.DirectionQueue with
-        | next :: _ -> next
-        | [] -> model.Game.Direction
-    let previewActive =
-        ModelState.isRunning model.Phase
-        && not (List.isEmpty model.DirectionQueue)
-
-    let padSegments (segments: Point array) =
-        match segments.Length with
-        | 0 -> Array.init maxSegments (fun _ -> { X = 0; Y = 0 })
-        | len when len = maxSegments -> segments
-        | len ->
-            Array.init maxSegments (fun idx ->
-                match idx < len with
-                | true -> segments.[idx]
-                | false -> segments.[len - 1])
-
-    let currentSegments = padSegments currentSegmentsRaw
-    let previousSegments =
-        if ModelState.isRunning model.Phase then padSegments previousSegmentsRaw else currentSegments
-
-    let progress =
-        if ModelState.isRunning model.Phase && model.SpeedMs > 0 then
-            model.PendingMoveMs |> float |> fun v -> v / float model.SpeedMs |> max 0.0 |> min 0.999
-        else
-            0.0
-
-    let fallbackLetter point =
-        let baseLetter = boardLetterFor point
-        if String.IsNullOrWhiteSpace baseLetter then "·" else baseLetter
-
-    for idx in 0 .. maxSegments - 1 do
-        let prev = previousSegments.[idx]
-        let prevX = float prev.X
-        let prevY = float prev.Y
-        let currentPoint = currentSegments.[idx]
-        let currX = float currentPoint.X
-        let currY = float currentPoint.Y
-        let curr = currentPoint
-
-        let interpolate currentValue futureValue =
-            currentValue + (futureValue - currentValue) * progress
-
-        let x = canvasPadding + interpolate prevX currX * cellStep
-        let y = canvasPadding + interpolate prevY currY * cellStep
-
-        let baseRotation =
-            let dx = currX - prevX
-            let dy = currY - prevY
-            if abs dx < 0.001 && abs dy < 0.001 then 0.0 else Math.Atan2(dy, dx)
-
-        let appliedRotation =
-            if idx = 0 && previewActive then
-                directionToAngle previewDirection
-            else
-                baseRotation
-
-        ctx.save()
-        ctx.translate (x + cellSize / 2., y + cellSize / 2.)
-        ctx.rotate (appliedRotation + (if idx = maxSegments - 1 then -Math.PI / 2. else 0.))
-        ctx?fillStyle <- (if idx = 0 then "#4c7e7b" else "#2b4b4e")
-        ctx.fillRect (-cellSize / 2., -cellSize / 2., cellSize, cellSize)
-        ctx.restore()
-
-        let highlightStrength =
-            if model.HighlightActive then
-                let distance = abs (model.HighlightProgress - float idx)
-                if distance < 1.0 then 1.0 - distance else 0.0
-            else
-                0.0
-
-        let letterRotation =
-            if Config.gameplay.RotateSegmentLetters then
-                appliedRotation + Math.PI
-            else
-                0.0
-
-        match Map.tryFind idx assignedLetters with
-        | Some letter when not (String.IsNullOrWhiteSpace letter) ->
-            drawLetter ctx letter x y letterRotation highlightStrength
-        | _ ->
-            if idx <> maxSegments - 1 then
-                drawLetter ctx (fallbackLetter curr) x y letterRotation highlightStrength
+let private boardPropsEqual (prev: Model) (next: Model) =
+    obj.ReferenceEquals(prev, next)
+    || (prev.Game = next.Game
+        && prev.BoardLetters = next.BoardLetters
+        && prev.PendingMoveMs = next.PendingMoveMs
+        && prev.TargetText = next.TargetText
+        && prev.TargetIndex = next.TargetIndex
+        && prev.Phase = next.Phase
+        && prev.CountdownMs = next.CountdownMs
+        && prev.HighlightActive = next.HighlightActive
+        && prev.HighlightProgress = next.HighlightProgress
+        && prev.DirectionQueue = next.DirectionQueue
+        && prev.LastEel = next.LastEel
+        && prev.SpeedMs = next.SpeedMs)
 
 let private boardCanvas =
     FunctionComponent.Of(
         (fun (model: Model) ->
-            let canvasRef = reactUseRef (None: HTMLCanvasElement option)
-
-            reactUseEffect
-                (fun () ->
-                    let current = canvasRef?current |> unbox<HTMLCanvasElement option>
-                    match current with
-                    | Some canvas -> drawBoard canvas model
-                    | None -> ())
-                [| box model.Game
-                   box model.BoardLetters
-                   box model.PendingMoveMs
-                   box model.TargetText
-                   box model.LastEel
-                   box model.SpeedMs
-                   box (ModelState.isRunning model.Phase) |]
-
-            canvas [ Ref(fun el ->
-                        let value =
-                            if isNull el then
-                                None
-                            else
-                                Some (el :?> HTMLCanvasElement)
-                        canvasRef?current <- value)
-                     ClassName "board-canvas" ] []),
-        memoizeWith = equalsButFunctions)
+#if FABLE_COMPILER
+            match detectRenderEngine () with
+            | RenderEngine.Konva -> KonvaRenderer.view model
+            | RenderEngine.Canvas -> CanvasRenderer.view model
 #else
-let private boardCanvas =
-    FunctionComponent.Of(
-        (fun (_: Model) ->
-            div [ ClassName "board-canvas board-canvas--placeholder" ]
-                [ str "Canvas renderer is only available in the browser build." ]),
-        memoizeWith = equalsButFunctions)
+            CanvasRenderer.view model
 #endif
+        ),
+        memoizeWith = boardPropsEqual)
 
 let private nameInputOnChange dispatch =
 #if FABLE_COMPILER
-    OnChange(fun ev -> dispatch (SetPlayerName((ev.target :?> HTMLInputElement).value)))
+    OnChange(fun ev -> dispatch (SetPlayerName((ev.target :?> Browser.Types.HTMLInputElement).value)))
 #else
     OnChange(fun _ -> ())
 #endif
-
 
 let private countdownOverlay model =
     if not (ModelState.isRunning model.Phase) then
@@ -421,8 +195,6 @@ let view model dispatch =
             boardView model
             statsView model dispatch
         ]
-
-
 
 
 

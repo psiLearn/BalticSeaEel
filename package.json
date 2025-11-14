@@ -9,6 +9,7 @@
     "test:client:fable": "dotnet fable tests/Client.FableTests/Client.FableTests.fsproj --run \"npx mocha tests/Client.FableTests/Tests.fs.js\""
   },
   "dependencies": {
+    "konva": "^10.0.8",
     "react": "18.2.0",
     "react-dom": "18.2.0",
     "react-native": "^0.72.7"

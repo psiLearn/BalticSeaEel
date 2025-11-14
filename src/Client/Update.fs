@@ -108,6 +108,7 @@ let private updateHighlightWave trigger deltaMs (model: Model) =
         activated
 
 let private tryStopATick key =
+#if FABLE_COMPILER
     let countdownObj: obj = window?(key)
 
     if not (isNullOrUndefined countdownObj) then
@@ -123,7 +124,10 @@ let private tryStopATick key =
         | _ -> ()
 
         window?key <- null
-//        window?loopTokenKey <- null
+#else
+    ()
+#endif
+
 let private tryStopCountdown () =
     tryStopATick countdownKey
 let private tryStopTick () =
@@ -227,6 +231,7 @@ let private handleTickResult (result: GameLoop.TickResult) =
     result.Model, command
 
 let startLoopCmd () : Cmd<Msg> =
+#if FABLE_COMPILER
     Cmd.ofEffect (fun dispatch ->
         log "Loop" $"Starting loop with target tick interval {tickIntervalMs} ms."
         tryCleanupPrevious ()
@@ -315,6 +320,9 @@ let startLoopCmd () : Cmd<Msg> =
 
         window.addEventListener ("beforeunload", unloadHandler)
         window?cleanupKey <- cleanup)
+#else
+    Cmd.none
+#endif
 
 let init () =
     log "Init" "Initializing model and starting commands."

@@ -282,6 +282,45 @@ let ``multiple inputs buffer sequential turns`` () =
     Assert.Equal(Direction.Up, afterFirstTurn.Game.Direction)
     Assert.Equal<Direction list>([ Direction.Left ], afterFirstTurn.DirectionQueue)
 
+[<Fact>]
+let ``TogglePause switches between running and paused`` () =
+    let running =
+        { initModel with
+            Phase = GamePhase.Running
+            ScoresLoading = false
+            PendingMoveMs = 10 }
+
+    let paused, _ = Update.update TogglePause running
+    Assert.Equal(GamePhase.Paused, paused.Phase)
+    Assert.Equal(0, paused.PendingMoveMs)
+    Assert.Equal<Direction list>([], paused.DirectionQueue)
+
+    let resumed, cmd = Update.update TogglePause paused
+    Assert.Equal(GamePhase.Running, resumed.Phase)
+    Assert.Equal(0, resumed.PendingMoveMs)
+    Assert.Equal<Direction list>([], resumed.DirectionQueue)
+    Assert.True(cmdIsEmpty cmd)
+
+[<Fact>]
+let ``Restart clears pending state and direction queue`` () =
+    let head = { X = 5; Y = 5 }
+    let model =
+        { initModel with
+            Phase = GamePhase.Running
+            ScoresLoading = false
+            PendingMoveMs = 80
+            DirectionQueue = [ Direction.Up; Direction.Left ]
+            Game =
+                { Game.initialState () with
+                    Eel = [ head ]
+                    Direction = Direction.Right } }
+
+    let reset, cmd = Update.update Restart model
+    Assert.Equal(GamePhase.Countdown, reset.Phase)
+    Assert.Equal(0, reset.PendingMoveMs)
+    Assert.Equal<Direction list>([], reset.DirectionQueue)
+    Assert.True(cmdHasEffects cmd)
+
 
 [<Fact>]
 let ``applyTick marks game over and requests loop stop`` () =
