@@ -167,7 +167,7 @@ let nextTargetChar model =
     else
         None
 
-let displayChar = string //c = id //if c = ' ' then "·" else string c
+let displayChar = string
 
 let progressParts model =
     if model.TargetText = "" then

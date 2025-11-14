@@ -19,15 +19,33 @@ let private cleanupKey = "__eelCleanup"
 let private countdownKey = "__eelCountdown"
 let private tickKey = "__eelTick"
 let private celebrationDelayKey = "__eelCelebrationDelay"
+let private loopTokenKey = "__eelLoopToken"
 let private highScoreStorageKey = "eel:highscore"
 let private startHotkeyKey = "__eelStartHotkey"
 let private tickIntervalMs = 40
 let private startCountdownMs = Config.gameplay.StartCountdownMs
 let private levelCountdownMs = Config.gameplay.LevelCountdownMs
 let private celebrationDelayMs = Config.gameplay.CelebrationDelayMs
+let private countdownStepMs = 1000
+let private minTickDeltaMs = 1
+let private maxTickDeltaMs = 500
 let private foodBurstConfig = Config.gameplay.FoodBurst
 let private highlightSpeedSegmentsPerMs = foodBurstConfig.WaveSpeedSegmentsPerMs
 let private maxDirectionQueue = 3
+
+module private WindowStore =
+#if FABLE_COMPILER
+    let tryGet<'T> key =
+        let raw: obj = window?(key)
+        if isNullOrUndefined raw then None else Some(unbox<'T> raw)
+
+    let set key (value: obj) = window?(key) <- value
+    let clear key = window?(key) <- null
+#else
+    let tryGet<'T> _ = None
+    let set _ _ = ()
+    let clear _ = ()
+#endif
 
 let private log category message = printfn "[Update|%s] %s" category message
 
@@ -57,8 +75,9 @@ let private writeStoredHighScore (score: HighScore option) =
 
 #if FABLE_COMPILER
 let private registerStartHotkey dispatch =
-    let existing: obj = window?(startHotkeyKey)
-    if isNull existing then
+    match WindowStore.tryGet<Event -> unit> startHotkeyKey with
+    | Some _ -> ()
+    | None ->
         let listener =
             fun (ev: Event) ->
                 let keyEvent = ev :?> KeyboardEvent
@@ -67,7 +86,7 @@ let private registerStartHotkey dispatch =
                     dispatch StartGame
 
         window.addEventListener ("keydown", listener)
-        window?(startHotkeyKey) <- listener
+        WindowStore.set startHotkeyKey listener
 
 let private enableStartHotkeyCmd : Cmd<Msg> =
     Cmd.ofEffect (fun dispatch -> registerStartHotkey dispatch)
@@ -104,9 +123,8 @@ let private updateHighlightWave trigger deltaMs (model: Model) =
 
 let private tryStopATick key =
 #if FABLE_COMPILER
-    let countdownObj: obj = window?(key)
-
-    if not (isNullOrUndefined countdownObj) then
+    match WindowStore.tryGet<obj> key with
+    | Some countdownObj ->
         match countdownObj with
         | :? float as id ->
             window.cancelAnimationFrame id
@@ -118,7 +136,8 @@ let private tryStopATick key =
             window.clearTimeout id
         | _ -> ()
 
-        window?key <- null
+        WindowStore.clear key
+    | None -> ()
 #else
     ()
 #endif
@@ -146,15 +165,13 @@ let private enqueueDirection queue direction =
         appended |> List.skip (appended.Length - maxDirectionQueue)
 
 let private tryCleanupPrevious () =
-    let cleanupObj: obj = window?(cleanupKey)
-
-    if not (isNullOrUndefined cleanupObj) then
-        match cleanupObj with
-        | :? (unit -> unit) as cleanup -> cleanup ()
-        | _ -> ()
-
-        window?cleanupKey <- null
-        window?loopTokenKey <- null
+    match WindowStore.tryGet<unit -> unit> cleanupKey with
+    | Some cleanup ->
+        cleanup ()
+        WindowStore.clear cleanupKey
+        WindowStore.clear loopTokenKey
+    | None ->
+        WindowStore.clear loopTokenKey
 
 let private stopLoopCmd : Cmd<Msg> =
     Cmd.ofEffect (fun _ -> tryCleanupPrevious ())
@@ -165,8 +182,8 @@ let scheduleCountdownCmd () : Cmd<Msg> =
         let timeoutId =
             window.setTimeout(
                 (fun _ -> dispatch CountdownTick),
-                1000)
-        window?countdownKey <- timeoutId)
+                countdownStepMs)
+        WindowStore.set countdownKey timeoutId)
 
 let private stopCountdownCmd : Cmd<Msg> =
     Cmd.ofEffect (fun _ -> tryStopCountdown ())
@@ -179,7 +196,7 @@ let private scheduleCelebrationCmd delayMs : Cmd<Msg> =
             window.setTimeout(
                 (fun _ -> dispatch CelebrationDelayElapsed),
                 delayMs)
-        window?celebrationDelayKey <- timeoutId)
+        WindowStore.set celebrationDelayKey timeoutId)
 #else
     ignore delayMs
     Cmd.none
@@ -266,27 +283,24 @@ let startLoopCmd () : Cmd<Msg> =
         tryCleanupPrevious ()
 
         let loopToken = System.Guid.NewGuid().ToString()
-        window?loopTokenKey <- loopToken
+        WindowStore.set loopTokenKey loopToken
 
         let rec schedule lastTimestamp =
             let frameId =
                 window.requestAnimationFrame(fun timestamp ->
-                    if window?loopTokenKey = loopToken then
-                        let elapsed =
-                            match lastTimestamp with
-                            | Some previous -> timestamp - previous
-                            | None -> float tickIntervalMs
-
+                    match WindowStore.tryGet<string> loopTokenKey with
+                    | Some value when value = loopToken ->
+                        let elapsed = match lastTimestamp with | Some previous -> timestamp - previous | None -> float tickIntervalMs
                         let deltaMs =
                             elapsed
-                            |> max 1.0
-                            |> min 250.0
+                            |> max (float minTickDeltaMs)
+                            |> min (float maxTickDeltaMs)
                             |> int
-
                         dispatch (Tick deltaMs)
-                        schedule (Some timestamp))
+                        schedule (Some timestamp)
+                    | _ -> ())
 
-            window?(tickKey) <- frameId
+            WindowStore.set tickKey frameId
 
         schedule None
 
@@ -342,20 +356,20 @@ let startLoopCmd () : Cmd<Msg> =
             tryStopTick()
             window.removeEventListener ("keydown", handleKeyListener)
             window.removeEventListener ("beforeunload", unloadHandler)
-            window?loopTokenKey <- null
-            window?cleanupKey <- null
+            WindowStore.clear loopTokenKey
+            WindowStore.clear cleanupKey
 
         and unloadHandler (_: Event) = cleanup ()
 
         window.addEventListener ("beforeunload", unloadHandler)
-        window?cleanupKey <- cleanup)
+        WindowStore.set cleanupKey cleanup)
 #else
     Cmd.none
 #endif
 
 let private startCountdownModel (model: Model) =
     { model with
-        CountdownMs = Config.gameplay.StartCountdownMs
+        CountdownMs = startCountdownMs
         Phase = GamePhase.Countdown
         PendingMoveMs = 0
         DirectionQueue = []
@@ -404,7 +418,7 @@ let private handleCountdownTick model =
     log "Countdown" "Tick."
     match model.Phase with
     | GamePhase.Countdown ->
-        let remaining = max 0 (model.CountdownMs - 1000)
+        let remaining = max 0 (model.CountdownMs - countdownStepMs)
         if remaining <= 0 then
             tryStopCountdown ()
             { model with CountdownMs = 0 }, Cmd.ofMsg CountdownFinished
@@ -490,7 +504,10 @@ let private handleTick deltaMs model =
             LastEel = model.Game.Eel },
         Cmd.none
     else
-        let boundedDelta = deltaMs |> max 1 |> min 500
+        let boundedDelta =
+            deltaMs
+            |> max minTickDeltaMs
+            |> min maxTickDeltaMs
         let finalModel, remainder, cmdList = processTickMovement boundedDelta boundedDelta model
 
         let command =
