@@ -61,7 +61,15 @@ let collectAssignedLetters model =
         Map.empty
 
 let buildSegmentInfos (model: Model) =
-    let currentSegmentsRaw = model.Game.Eel |> List.toArray
+    let renderSegments =
+        if ModelState.isRunning model.Phase then
+            model.Game.Eel
+        elif not (List.isEmpty model.LastEel) then
+            model.LastEel
+        else
+            model.Game.Eel
+
+    let currentSegmentsRaw = renderSegments |> List.toArray
     let previousSegmentsRaw = model.LastEel |> List.toArray
     let maxSegments = max 1 (max currentSegmentsRaw.Length previousSegmentsRaw.Length)
     let assignedLetters = collectAssignedLetters model

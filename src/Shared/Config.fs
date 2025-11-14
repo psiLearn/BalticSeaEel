@@ -25,6 +25,7 @@ type GameplayConfig =
       MaxVisibleFoods: int
       StartCountdownMs: int
       LevelCountdownMs: int
+      CelebrationDelayMs: int
       RotateSegmentLetters: bool
       FoodBurst: FoodBurstConfig
       BoardVisuals: BoardVisualConfig
@@ -35,7 +36,8 @@ module Config =
         { InitialSpeedMs = 200
           MaxVisibleFoods = 20
           StartCountdownMs = 3000
-          LevelCountdownMs = 3000
+          LevelCountdownMs = 1500
+          CelebrationDelayMs = 1200
           RotateSegmentLetters = true
           FoodBurst =
             { Enabled = true

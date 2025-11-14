@@ -69,8 +69,8 @@ let private countdownEelCircle (phrase: string) =
                 [ div [ ClassName "countdown-eel-track" ] segments ])
 
 let private countdownCelebration model =
-    match model.Phase, model.LastCompletedPhrase with
-    | GamePhase.Countdown, Some phrase when not (String.IsNullOrWhiteSpace phrase) ->
+    match model.Phase, model.CelebrationVisible, model.LastCompletedPhrase with
+    | GamePhase.Countdown, true, Some phrase when not (String.IsNullOrWhiteSpace phrase) ->
         countdownEelCircle phrase
     | _ -> None
 let private boardPropsEqual (prev: Model) (next: Model) =

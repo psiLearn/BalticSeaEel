@@ -23,6 +23,7 @@ type Model =
       PhraseQueue: string list
       NeedsNextPhrase: bool
       LastCompletedPhrase: string option
+      CelebrationVisible: bool
       HighlightWaves: float list
       SpeedMs: int
       PendingMoveMs: int
@@ -71,6 +72,7 @@ type Msg =
     | VocabularyFailed of string
     | ScoresLoaded of HighScore list
     | ScoresFailed of string
+    | CelebrationDelayElapsed
 
 let defaultVocabularyEntry: VocabularyEntry =
     { Topic = "Mer Baltique"
@@ -146,6 +148,7 @@ let initModel =
       PhraseQueue = remainingQueue
       NeedsNextPhrase = false
       LastCompletedPhrase = None
+      CelebrationVisible = false
       HighlightWaves = []
       SpeedMs = initialSpeed
       PendingMoveMs = 0
