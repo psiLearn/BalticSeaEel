@@ -23,7 +23,8 @@ let private startHotkeyKey = "__eelStartHotkey"
 let private tickIntervalMs = 40
 let private startCountdownMs = Config.gameplay.StartCountdownMs
 let private levelCountdownMs = Config.gameplay.LevelCountdownMs
-let private highlightSpeedSegmentsPerMs = 0.004
+let private foodBurstConfig = Config.gameplay.FoodBurst
+let private highlightSpeedSegmentsPerMs = foodBurstConfig.WaveSpeedSegmentsPerMs
 let private maxDirectionQueue = 3
 
 let private log category message = printfn "[Update|%s] %s" category message
@@ -66,46 +67,38 @@ let private registerStartHotkey dispatch =
         window.addEventListener ("keydown", listener)
         window?(startHotkeyKey) <- listener
 
-let private unregisterStartHotkey () =
-    let existing: obj = window?(startHotkeyKey)
-    if not (isNull existing) then
-        let listener = existing :?> (Event -> unit)
-        window.removeEventListener ("keydown", listener)
-        window?(startHotkeyKey) <- null
-
 let private enableStartHotkeyCmd : Cmd<Msg> =
     Cmd.ofEffect (fun dispatch -> registerStartHotkey dispatch)
-
-let private disableStartHotkeyCmd : Cmd<Msg> =
-    Cmd.ofEffect (fun _ -> unregisterStartHotkey ())
 #else
 let private enableStartHotkeyCmd : Cmd<Msg> = Cmd.none
-let private disableStartHotkeyCmd : Cmd<Msg> = Cmd.none
 #endif
 
 let private updateHighlightWave trigger deltaMs (model: Model) =
-    let activated =
-        if trigger then
-            { model with
-                HighlightActive = true
-                HighlightProgress = 0.0 }
-        else
-            model
-
-    if activated.HighlightActive then
-        let newProgress =
-            activated.HighlightProgress
-            + highlightSpeedSegmentsPerMs * float deltaMs
-
-        let maxSegments = float (max 1 activated.Game.Eel.Length) + 1.0
-        if newProgress >= maxSegments then
-            { activated with
-                HighlightActive = false
-                HighlightProgress = 0.0 }
-        else
-            { activated with HighlightProgress = newProgress }
+    if not foodBurstConfig.Enabled then
+        { model with HighlightWaves = [] }
     else
-        activated
+        let progressedWaves =
+            model.HighlightWaves
+            |> List.map (fun wave -> wave + highlightSpeedSegmentsPerMs * float deltaMs)
+
+        let withNewWave =
+            if trigger then
+                0.0 :: progressedWaves
+            else
+                progressedWaves
+
+        let limitedWaves =
+            match foodBurstConfig.MaxConcurrentWaves with
+            | Some limit when limit > 0 -> withNewWave |> List.truncate limit
+            | _ -> withNewWave
+
+        let maxSegments = float (max 1 model.Game.Eel.Length) + 1.0
+
+        let remainingWaves =
+            limitedWaves
+            |> List.filter (fun wave -> wave < maxSegments)
+
+        { model with HighlightWaves = remainingWaves }
 
 let private tryStopATick key =
 #if FABLE_COMPILER
@@ -193,7 +186,8 @@ let private advancePhrase model =
         TargetText = next
         TargetIndex = 0
         PhraseQueue = rest
-        NeedsNextPhrase = false }
+        NeedsNextPhrase = false
+        LastCompletedPhrase = None }
 
 let private ensureNextPhrase model =
     if model.NeedsNextPhrase || String.IsNullOrWhiteSpace model.TargetText then
@@ -342,6 +336,9 @@ let update msg model =
     | StartGame when model.ScoresLoading ->
         log "Game" "Start requested while scores still loading; waiting."
         model, Cmd.none
+    | StartGame when model.Phase = GamePhase.GameOver ->
+        log "Game" "Start requested during game over; restarting."
+        model, Cmd.ofMsg Restart
     | StartGame when model.Phase <> GamePhase.Splash ->
         log "Game" "Start requested but splash already dismissed."
         model, Cmd.none
@@ -356,10 +353,7 @@ let update msg model =
                 Error = None
                 ScoresError = None }
             |> withFreshLastEel
-        updated, Cmd.batch [ 
-            disableStartHotkeyCmd 
-            scheduleCountdownCmd () 
-        ]
+        updated, scheduleCountdownCmd ()
     | TogglePause ->
         match model.Phase with
         | GamePhase.Running ->

@@ -13,6 +13,41 @@ open Eel.Client.Rendering.Shared
 
 module ModelState = Eel.Client.Model
 
+let private foodBurstConfig = Config.gameplay.FoodBurst
+let private foodVisualConfig = Config.gameplay.FoodVisuals
+let private boardConfig = Config.gameplay.BoardVisuals
+
+let private clamp01 value = value |> max 0.0 |> min 1.0
+
+let private blendWithWhite (hex: string) (intensity: float) =
+    let factor = clamp01 intensity
+    if factor <= 0.0 then
+        hex
+    else
+        let clean = hex.Trim().TrimStart('#')
+        if clean.Length <> 6 then hex
+        else
+            let parse idx = Convert.ToInt32(clean.Substring(idx, 2), 16)
+            let mix comp =
+                let compFloat = float comp
+                compFloat + (255.0 - compFloat) * factor |> round |> int |> min 255 |> max 0
+            let r = parse 0 |> mix
+            let g = parse 2 |> mix
+            let b = parse 4 |> mix
+            $"#{r:X2}{g:X2}{b:X2}"
+
+let private drawBoardLetter (ctx: CanvasRenderingContext2D) text x y =
+    let alpha = clamp01 boardConfig.LetterAlpha
+    ctx?save()
+    ctx?globalAlpha <- alpha
+    ctx?translate(x + cellSize / 2., y + cellSize / 2.)
+    ctx?fillStyle <- boardConfig.LetterColor
+    ctx.font <- $"bold {boardConfig.LetterSize}px 'Segoe UI'"
+    ctx?textAlign <- "center"
+    ctx?textBaseline <- "middle"
+    ctx.fillText (text, 0., 0.)
+    ctx?restore()
+
 #if FABLE_COMPILER
 [<Import("useRef", "react")>]
 let private reactUseRef<'T> (value: 'T) : obj = jsNative
@@ -54,7 +89,8 @@ let private drawLetter (ctx: CanvasRenderingContext2D) text x y rotation highlig
             let alpha = min 1.0 (0.6 + (0.4 * highlight))
             $"rgba(255,255,255,{alpha})"
 
-    let fontSize = 14.0 + (6.0 * highlight)
+    let baseFontSize = 14.0 + (6.0 * highlight)
+    let fontSize = baseFontSize * foodBurstConfig.LetterSizeFactor
     ctx?fillStyle <- color
     ctx.font <- $"bold {fontSize}px 'Segoe UI'"
     ctx?textAlign <- "center"
@@ -63,29 +99,26 @@ let private drawLetter (ctx: CanvasRenderingContext2D) text x y rotation highlig
     ctx?restore()
 
 let private drawGridCells (ctx: CanvasRenderingContext2D) (model: Model) =
+    let highlightOpacity = clamp01 boardConfig.CellHighlightOpacity
     for y in 0 .. Game.boardHeight - 1 do
         for x in 0 .. Game.boardWidth - 1 do
             let drawX = canvasPadding + float x * cellStep
             let drawY = canvasPadding + float y * cellStep
-            ctx?fillStyle <- "rgba(255,255,255,0.04)"
+            ctx?fillStyle <- boardConfig.CellBaseColor
             ctx.fillRect (drawX, drawY, cellSize, cellSize)
 
             let letter = boardLetterFor model { X = x; Y = y }
             if not (String.IsNullOrWhiteSpace letter) then
-                drawLetter ctx letter drawX drawY 0.0 0.0
+                if highlightOpacity > 0.0 then
+                    ctx?fillStyle <- $"rgba(255,255,255,{highlightOpacity})"
+                    ctx.fillRect (drawX, drawY, cellSize, cellSize)
+                drawBoardLetter ctx letter drawX drawY
 
 let private drawFoodTokens (ctx: CanvasRenderingContext2D) (model: Model) =
-    let nextLetter = nextTargetChar model |> Option.map displayChar
-
     let tokenLetter token =
-        match token.Status, nextLetter with
-        | FoodStatus.Active, Some letter -> letter
-        | FoodStatus.Active, None -> ""
-        | FoodStatus.Collected, _ ->
-            if token.LetterIndex >= 0 && token.LetterIndex < model.TargetText.Length then
-                displayChar model.TargetText.[token.LetterIndex]
-            else
-                "?"
+        match token.LetterIndex with
+        | idx when idx >= 0 && idx < model.TargetText.Length -> displayChar model.TargetText.[idx]
+        | _ -> "?"
 
     model.Game.Foods
     |> List.iter (fun token ->
@@ -95,15 +128,15 @@ let private drawFoodTokens (ctx: CanvasRenderingContext2D) (model: Model) =
 
         match token.Status with
         | FoodStatus.Active ->
-            ctx?fillStyle <- "rgba(88,161,107,0.8)"
+            ctx?fillStyle <- foodVisualConfig.ActiveFill
             ctx.beginPath()
             ctx.arc (drawX + cellSize / 2., drawY + cellSize / 2., cellSize / 2.6, 0., Math.PI * 2.)
             ctx.fill()
-            if letter <> "" then drawLetter ctx letter drawX drawY 0.0 0.0
+            if foodVisualConfig.ShowLetters && letter <> "" then drawLetter ctx letter drawX drawY 0.0 0.0
         | FoodStatus.Collected ->
-            ctx?fillStyle <- "rgba(255,255,255,0.15)"
+            ctx?fillStyle <- foodVisualConfig.CollectedFill
             ctx.fillRect (drawX, drawY, cellSize, cellSize)
-            if letter <> "" then drawLetter ctx letter drawX drawY 0.0 0.0)
+            if foodVisualConfig.ShowLetters && letter <> "" then drawLetter ctx letter drawX drawY 0.0 0.0)
 
 let private drawSegments (ctx: CanvasRenderingContext2D) (model: Model) =
     buildSegmentInfos model
@@ -111,7 +144,10 @@ let private drawSegments (ctx: CanvasRenderingContext2D) (model: Model) =
         ctx.save()
         ctx.translate (info.X + cellSize / 2., info.Y + cellSize / 2.)
         ctx.rotate (info.Rotation + (if info.IsTail then -Math.PI / 2. else 0.0))
-        ctx?fillStyle <- (if info.IsHead then "#4c7e7b" else "#2b4b4e")
+        let baseColor = if info.IsHead then "#4c7e7b" else "#2b4b4e"
+        let highlightFactor = info.Highlight * foodBurstConfig.SegmentWeightFactor |> clamp01
+        let fillColor = blendWithWhite baseColor highlightFactor
+        ctx?fillStyle <- fillColor
         ctx.fillRect (-cellSize / 2., -cellSize / 2., cellSize, cellSize)
         ctx.restore()
 

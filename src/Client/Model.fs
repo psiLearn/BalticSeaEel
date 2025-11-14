@@ -22,8 +22,8 @@ type Model =
       TargetIndex: int
       PhraseQueue: string list
       NeedsNextPhrase: bool
-      HighlightProgress: float
-      HighlightActive: bool
+      LastCompletedPhrase: string option
+      HighlightWaves: float list
       SpeedMs: int
       PendingMoveMs: int
       DirectionQueue: Direction list
@@ -145,8 +145,8 @@ let initModel =
       TargetIndex = 0
       PhraseQueue = remainingQueue
       NeedsNextPhrase = false
-      HighlightProgress = 0.0
-      HighlightActive = false
+      LastCompletedPhrase = None
+      HighlightWaves = []
       SpeedMs = initialSpeed
       PendingMoveMs = 0
       DirectionQueue = []

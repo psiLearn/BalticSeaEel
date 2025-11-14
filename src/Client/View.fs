@@ -22,6 +22,57 @@ module KonvaRenderer = Eel.Client.Rendering.KonvaRenderer
 
 module ModelState = Eel.Client.Model
 
+let private filteredLetters (phrase: string) =
+    phrase
+    |> Seq.filter (fun ch -> not (Char.IsWhiteSpace ch))
+    |> Seq.map string
+    |> Seq.toArray
+
+let private countdownRadius lettersLength =
+    let spacing = 46.0
+    (float lettersLength * spacing) / (2.0 * Math.PI)
+    |> max 70.0
+    |> min 220.0
+
+let private countdownSegment idx total radius letter =
+    let angle = (float idx / float total) * 2.0 * Math.PI
+    let x = radius * Math.Cos angle
+    let y = radius * Math.Sin angle
+    let rotation = (angle * 180.0 / Math.PI) + 90.0
+    let classes =
+        [ "countdown-eel-segment"
+          if idx = 0 then "head" else ""
+          if idx = total - 1 then "tail" else "" ]
+        |> List.filter (fun c -> c <> "")
+        |> String.concat " "
+
+    div [ ClassName classes
+          Style [ CSSProp.Left (sprintf "calc(50%% + %.1fpx)" x)
+                  CSSProp.Top (sprintf "calc(50%% + %.1fpx)" y)
+                  CSSProp.Transform (sprintf "translate(-50%%, -50%%) rotate(%.1fdeg)" rotation) ] ]
+        [ str letter ]
+
+let private countdownEelCircle (phrase: string) =
+    let letters = filteredLetters phrase
+
+    if letters.Length = 0 then
+        None
+    else
+        let radius = countdownRadius letters.Length
+        let segments =
+            letters
+            |> Array.mapi (fun idx letter -> countdownSegment idx letters.Length radius letter)
+            |> Array.toList
+
+        Some(
+            div [ ClassName "countdown-eel" ]
+                [ div [ ClassName "countdown-eel-track" ] segments ])
+
+let private countdownCelebration model =
+    match model.Phase, model.LastCompletedPhrase with
+    | GamePhase.Countdown, Some phrase when not (String.IsNullOrWhiteSpace phrase) ->
+        countdownEelCircle phrase
+    | _ -> None
 let private boardPropsEqual (prev: Model) (next: Model) =
     obj.ReferenceEquals(prev, next)
     || (prev.Game = next.Game
@@ -31,11 +82,11 @@ let private boardPropsEqual (prev: Model) (next: Model) =
         && prev.TargetIndex = next.TargetIndex
         && prev.Phase = next.Phase
         && prev.CountdownMs = next.CountdownMs
-        && prev.HighlightActive = next.HighlightActive
-        && prev.HighlightProgress = next.HighlightProgress
+        && prev.HighlightWaves = next.HighlightWaves
         && prev.DirectionQueue = next.DirectionQueue
         && prev.LastEel = next.LastEel
-        && prev.SpeedMs = next.SpeedMs)
+        && prev.SpeedMs = next.SpeedMs
+        && prev.LastCompletedPhrase = next.LastCompletedPhrase)
 
 let private boardCanvas =
     FunctionComponent.Of(
@@ -61,7 +112,10 @@ let private countdownOverlay model =
     if not (ModelState.isRunning model.Phase) then
         let seconds = max 0 ((model.CountdownMs + 999) / 1000)
         let label = if seconds > 0 then string seconds else "GO!"
-        [ div [ ClassName "board-overlay" ] [ str label ] ]
+        let baseOverlay = div [ ClassName "board-overlay board-overlay--countdown" ] [ str label ]
+        match countdownCelebration model with
+        | Some celebration -> [ baseOverlay; celebration ]
+        | None -> [ baseOverlay ]
     else
         []
 
@@ -195,8 +249,5 @@ let view model dispatch =
             boardView model
             statsView model dispatch
         ]
-
-
-
 
 

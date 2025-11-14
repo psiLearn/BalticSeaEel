@@ -77,6 +77,32 @@ Baltic Sea Eel pairs a Fable/Elmish client with a Giraffe API to build a vocabul
 
 With Docker you can spin up the Postgres container locally, seed vocabulary, and run both frontend and backend together via `npm run dev` and `dotnet watch run`.
 
+### Visual & highlight configuration
+
+Most of the rendering behaviour can be tweaked centrally in `src/Shared/Config.fs`:
+
+- `FoodVisuals` controls whether food letters are shown at all and which colours are used for active/collected tokens (default is to hide the letters for a cleaner board).
+- `BoardVisuals` sets the grid background colour, highlight opacity, and board-letter styling.
+- `FoodBurst` enables/disables the eel highlight wave, caps how many simultaneous waves may run, and scales their speed/brightness.
+
+Example:
+
+```fsharp
+FoodVisuals =
+    { ShowLetters = true
+      ActiveFill = "rgba(88,161,107,0.8)"
+      CollectedFill = "rgba(255,255,255,0.15)" }
+FoodBurst =
+    { Enabled = true
+      MaxConcurrentWaves = Some 3
+      WaveSpeedSegmentsPerMs = 0.001
+      LetterSizeFactor = 1.5
+      LetterWeightFactor = 1.3
+      SegmentWeightFactor = 0.8 }
+```
+
+Adjust these values and reload the client to experiment with different looks or to disable specific effects (e.g., set `FoodVisuals.ShowLetters = true` to restore letters on food tokens).
+
 ## Development
 
 ```powershell

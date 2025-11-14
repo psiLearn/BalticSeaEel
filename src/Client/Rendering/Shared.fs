@@ -13,6 +13,8 @@ let cellSize = 26.0
 let cellGap = 6.0
 let cellStep = cellSize + cellGap
 
+let foodBurstConfig = Config.gameplay.FoodBurst
+
 type SegmentRenderInfo =
     { Index: int
       X: float
@@ -28,11 +30,15 @@ type RenderEngine =
     | Konva
 
 let highlightForSegment model idx =
-    if model.HighlightActive then
-        let distance = abs (model.HighlightProgress - float idx)
-        if distance < 1.0 then 1.0 - distance else 0.0
-    else
-        0.0
+    let baseHighlight =
+        model.HighlightWaves
+        |> List.map (fun progress ->
+            let distance = abs (progress - float idx)
+            if distance < 1.0 then 1.0 - distance else 0.0)
+        |> List.fold max 0.0
+
+    let weighted = baseHighlight * foodBurstConfig.LetterWeightFactor
+    weighted |> max 0.0 |> min 1.0
 
 let boardLetterFor (model: Model) (point: Point) =
     let index = point.Y * Game.boardWidth + point.X
