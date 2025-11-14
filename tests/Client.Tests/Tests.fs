@@ -10,6 +10,7 @@ module ModelState = Eel.Client.Model
 module Game = Shared.Game
 module Update = Eel.Client.Update
 module Loop = Eel.Client.GameLoop
+module RenderingShared = Eel.Client.Rendering.Shared
 
 let tickDelta = 40
 
@@ -451,12 +452,14 @@ let ``StartGame hides splash and queues countdown`` () =
         { initModel with
             Phase = GamePhase.Splash
             ScoresLoading = false
-            CountdownMs = Config.gameplay.StartCountdownMs }
+            CountdownMs = Config.gameplay.StartCountdownMs
+            CelebrationVisible = true }
 
     let updated, cmd = Update.update StartGame model
 
     Assert.Equal(GamePhase.Countdown, updated.Phase)
     Assert.Equal(Config.gameplay.StartCountdownMs, updated.CountdownMs)
+    Assert.False(updated.CelebrationVisible)
     Assert.True(cmdHasEffects cmd)
 
 [<Fact>]
@@ -482,6 +485,56 @@ let ``StartGame ignored while scores still loading`` () =
     let updated, cmd = Update.update StartGame model
     Assert.Equal(model, updated)
     Assert.True(cmdIsEmpty cmd)
+
+[<Fact>]
+let ``CelebrationDelayElapsed reveals overlay only during countdown`` () =
+    let model =
+        { initModel with
+            Phase = GamePhase.Countdown
+            ScoresLoading = false
+            LastCompletedPhrase = Some "Demo"
+            CelebrationVisible = false }
+
+    let updated, cmd = Update.update CelebrationDelayElapsed model
+    Assert.True(updated.CelebrationVisible)
+    Assert.True(cmdIsEmpty cmd)
+
+[<Fact>]
+let ``CelebrationDelayElapsed stops pending timer when inactive`` () =
+    let model =
+        { initModel with
+            Phase = GamePhase.Running
+            ScoresLoading = false
+            LastCompletedPhrase = Some "Demo"
+            CelebrationVisible = false }
+
+    let updated, cmd = Update.update CelebrationDelayElapsed model
+    Assert.Equal(model, updated)
+    Assert.True(cmdIsEmpty cmd)
+
+[<Fact>]
+let ``buildSegmentInfos uses last eel during countdown`` () =
+    let lastPath = [ { X = 4; Y = 7 }; { X = 4; Y = 8 }; { X = 4; Y = 9 } ]
+    let model =
+        { initModel with
+            Phase = GamePhase.Countdown
+            ScoresLoading = false
+            LastEel = lastPath
+            Game =
+                { initModel.Game with
+                    Eel = [ { X = 1; Y = 1 } ]
+                    Direction = Direction.Right } }
+
+    let infos = RenderingShared.buildSegmentInfos model
+    Assert.True(infos.Length >= lastPath.Length)
+    let head = infos.[0]
+    let expectedX =
+        RenderingShared.canvasPadding + float lastPath.Head.X * RenderingShared.cellStep
+    let expectedY =
+        RenderingShared.canvasPadding + float lastPath.Head.Y * RenderingShared.cellStep
+
+    Assert.Equal(expectedX, head.X, 5)
+    Assert.Equal(expectedY, head.Y, 5)
 
 [<Fact>]
 let ``ScoresLoaded sorts entries and updates high score`` () =
