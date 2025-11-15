@@ -14,6 +14,19 @@ let cellGap = 6.0
 let cellStep = cellSize + cellGap
 
 let foodBurstConfig = Config.gameplay.FoodBurst
+let boardPixelWidth =
+    (float Game.boardWidth * cellStep) - cellGap + (2.0 * canvasPadding)
+
+let boardPixelHeight =
+    (float Game.boardHeight * cellStep) - cellGap + (2.0 * canvasPadding)
+
+type BoardDimensions =
+    { PixelWidth: float
+      PixelHeight: float }
+
+let boardDimensions =
+    { PixelWidth = boardPixelWidth
+      PixelHeight = boardPixelHeight }
 
 type SegmentRenderInfo =
     { Index: int

@@ -20,6 +20,7 @@ let private countdownKey = "__eelCountdown"
 let private tickKey = "__eelTick"
 let private celebrationDelayKey = "__eelCelebrationDelay"
 let private loopTokenKey = "__eelLoopToken"
+let private resizeHandlerKey = "__eelResize"
 let private highScoreStorageKey = "eel:highscore"
 let private startHotkeyKey = "__eelStartHotkey"
 let private tickIntervalMs = 40
@@ -94,6 +95,35 @@ let private enableStartHotkeyCmd : Cmd<Msg> =
 let private enableStartHotkeyCmd : Cmd<Msg> = Cmd.none
 #endif
 
+#if FABLE_COMPILER
+let private registerResizeListener dispatch =
+    match WindowStore.tryGet<Event -> unit> resizeHandlerKey with
+    | Some _ -> ()
+    | None ->
+        let handler =
+            fun (_: Event) ->
+                let width = window.innerWidth |> float
+                let height = window.innerHeight |> float
+                dispatch (WindowResized(width, height))
+
+        window.addEventListener ("resize", handler)
+        WindowStore.set resizeHandlerKey handler
+        dispatch (WindowResized(window.innerWidth |> float, window.innerHeight |> float))
+
+let private enableResizeListenerCmd : Cmd<Msg> =
+    Cmd.ofEffect (fun dispatch -> registerResizeListener dispatch)
+
+let private unregisterResizeListener () =
+    match WindowStore.tryGet<Event -> unit> resizeHandlerKey with
+    | Some handler ->
+        window.removeEventListener ("resize", handler)
+        WindowStore.clear resizeHandlerKey
+    | None -> ()
+
+#else
+let private enableResizeListenerCmd : Cmd<Msg> = Cmd.none
+#endif
+
 let private updateHighlightWave trigger deltaMs (model: Model) =
     if not foodBurstConfig.Enabled then
         { model with HighlightWaves = [] }
@@ -164,6 +194,12 @@ let private enqueueDirection queue direction =
     else
         appended |> List.skip (appended.Length - maxDirectionQueue)
 
+let private sanitizeViewportDimension fallback value =
+    if Double.IsNaN value || Double.IsInfinity value || value <= 0.0 then
+        fallback
+    else
+        value
+
 let private tryCleanupPrevious () =
     match WindowStore.tryGet<unit -> unit> cleanupKey with
     | Some cleanup ->
@@ -172,6 +208,9 @@ let private tryCleanupPrevious () =
         WindowStore.clear loopTokenKey
     | None ->
         WindowStore.clear loopTokenKey
+#if FABLE_COMPILER
+    unregisterResizeListener ()
+#endif
 
 let private stopLoopCmd : Cmd<Msg> =
     Cmd.ofEffect (fun _ -> tryCleanupPrevious ())
@@ -527,6 +566,7 @@ let init () =
 
     model,
     Cmd.batch [ enableStartHotkeyCmd
+                enableResizeListenerCmd
                 fetchHighScoreCmd
                 fetchVocabularyCmd
                 fetchScoresCmd ]
@@ -537,6 +577,21 @@ let update msg model =
     | TogglePause -> handleTogglePause model
     | CountdownTick -> handleCountdownTick model
     | CountdownFinished -> handleCountdownFinished model
+    | WindowResized (width, height) ->
+        let safeWidth = sanitizeViewportDimension Model.defaultViewportWidth width
+        let safeHeight = sanitizeViewportDimension Model.defaultViewportHeight height
+        let widthDelta = abs (safeWidth - model.ViewportWidth)
+        let heightDelta = abs (safeHeight - model.ViewportHeight)
+
+        if widthDelta < 0.5 && heightDelta < 0.5 then
+            model, Cmd.none
+        else
+            let updatedModel =
+                { model with
+                    ViewportWidth = safeWidth
+                    ViewportHeight = safeHeight }
+
+            updatedModel, Cmd.none
     | Tick deltaMs -> handleTick deltaMs model
     | ChangeDirection direction ->
         let queue = model.DirectionQueue

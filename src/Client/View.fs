@@ -3,6 +3,7 @@ module Eel.Client.View
 open System
 #if FABLE_COMPILER
 open Browser.Types
+open Browser.Dom
 #endif
 
 open Fable.Core
@@ -21,6 +22,10 @@ module KonvaRenderer = Eel.Client.Rendering.KonvaRenderer
 #endif
 
 module ModelState = Eel.Client.Model
+
+let private viewportPadding = 32.0
+let private minViewportSpan = 200.0
+let private miniOverlayMinSize = 32.0
 
 let private filteredLetters (phrase: string) =
     phrase
@@ -119,6 +124,138 @@ let private countdownOverlay model =
     else
         []
 
+let private clampFloat minValue maxValue value =
+    value |> max minValue |> min maxValue
+
+let headPixelCenter (model: Model) =
+    let interpolated =
+        buildSegmentInfos model
+        |> Array.tryFind (fun info -> info.IsHead)
+        |> Option.map (fun info -> info.X + (cellSize / 2.), info.Y + (cellSize / 2.))
+
+    match interpolated with
+    | Some coords -> coords
+    | None ->
+        match model.Game.Eel with
+        | head :: _ ->
+            let cx = canvasPadding + float head.X * cellStep
+            let cy = canvasPadding + float head.Y * cellStep
+            cx, cy
+        | [] ->
+            canvasPadding, canvasPadding
+
+let private clampShift size visible headCoord =
+    let maxShift = max 0.0 (size - visible)
+    if maxShift <= 0.0 then
+        0.0
+    else
+        headCoord - (visible / 2.0)
+        |> clampFloat 0.0 maxShift
+
+type private BoardViewportInfo =
+    { Element: ReactElement
+      ViewportWidth: float
+      ViewportHeight: float
+      VisibleWidth: float
+      VisibleHeight: float
+      ShouldShowMiniOverlay: bool }
+
+let private boardViewportElement (model: Model) : BoardViewportInfo =
+    let rawWidth =
+        if model.ViewportWidth > 0.0 then model.ViewportWidth else Model.defaultViewportWidth
+
+    let rawHeight =
+        if model.ViewportHeight > 0.0 then model.ViewportHeight else Model.defaultViewportHeight
+    let viewportWidth = max minViewportSpan (rawWidth - viewportPadding)
+    let viewportHeight = max minViewportSpan (rawHeight - viewportPadding)
+    let boardWidth = boardPixelWidth
+    let boardHeight = boardPixelHeight
+    let visibleWidth = min boardWidth viewportWidth
+    let visibleHeight = min boardHeight viewportHeight
+
+    let headX, headY = headPixelCenter model
+    let shiftX = clampShift boardWidth visibleWidth headX
+    let shiftY = clampShift boardHeight visibleHeight headY
+
+    let viewportStyle =
+        Style [ CSSProp.Width (sprintf "%.1fpx" visibleWidth)
+                CSSProp.Height (sprintf "%.1fpx" visibleHeight) ]
+
+    let innerStyle =
+        Style [ CSSProp.Width (sprintf "%.1fpx" boardWidth)
+                CSSProp.Height (sprintf "%.1fpx" boardHeight)
+                CSSProp.Transform (sprintf "translate(-%.1fpx, -%.1fpx)" shiftX shiftY) ]
+
+    let shouldShowMini =
+        visibleWidth < boardPixelWidth || visibleHeight < boardPixelHeight
+
+    { Element =
+        div [ ClassName "board-viewport"; viewportStyle ] [
+            div [ ClassName "board-viewport__inner"; innerStyle ] [
+                boardCanvas model
+            ]
+        ]
+      ViewportWidth = viewportWidth
+      ViewportHeight = viewportHeight
+      VisibleWidth = visibleWidth
+      VisibleHeight = visibleHeight
+      ShouldShowMiniOverlay = shouldShowMini }
+
+let private miniOverlayView (model: Model) visibleWidth visibleHeight =
+    let desiredSize =
+        min visibleWidth visibleHeight * Config.gameplay.MiniOverlayScale
+
+    let maxAllowed =
+        min (visibleWidth - 8.0) (visibleHeight - 8.0)
+
+    let baseSize = min desiredSize maxAllowed
+
+    if baseSize < miniOverlayMinSize then
+        None
+    else
+        let cellWidth = baseSize / float Game.boardWidth
+        let cellHeight = baseSize / float Game.boardHeight
+
+        let eelSegments =
+            model.Game.Eel
+            |> List.mapi (fun idx segment ->
+                let left = float segment.X * cellWidth
+                let top = float segment.Y * cellHeight
+                let className =
+                    if idx = 0 then
+                        "mini-overlay__segment mini-overlay__head"
+                    else
+                        "mini-overlay__segment"
+
+                div [ ClassName className
+                      Key $"mini-eel-{idx}-{segment.X}-{segment.Y}"
+                      Style [ CSSProp.Left (sprintf "%.2fpx" left)
+                              CSSProp.Top (sprintf "%.2fpx" top)
+                              CSSProp.Width (sprintf "%.2fpx" cellWidth)
+                              CSSProp.Height (sprintf "%.2fpx" cellHeight) ] ] [])
+
+        let foods =
+            model.Game.Foods
+            |> List.filter (fun token -> token.Status = FoodStatus.Active)
+            |> List.mapi (fun idx token ->
+                let left = float token.Position.X * cellWidth
+                let top = float token.Position.Y * cellHeight
+                div [ ClassName "mini-overlay__food"
+                      Key $"mini-food-{idx}-{token.Position.X}-{token.Position.Y}"
+                      Style [ CSSProp.Left (sprintf "%.2fpx" left)
+                              CSSProp.Top (sprintf "%.2fpx" top)
+                              CSSProp.Width (sprintf "%.2fpx" cellWidth)
+                              CSSProp.Height (sprintf "%.2fpx" cellHeight) ] ] [])
+
+        Some(
+            div [ ClassName "mini-overlay"
+                  Style [ CSSProp.Width (sprintf "%.1fpx" baseSize)
+                          CSSProp.Height (sprintf "%.1fpx" baseSize)
+                          CSSProp.Right "1rem"
+                          CSSProp.Bottom "1rem" ] ] [
+                div [ ClassName "mini-overlay__grid" ] (eelSegments @ foods)
+            ])
+
 let private boardView model =
     let collectedLetters =
         if String.IsNullOrEmpty model.TargetText then
@@ -146,8 +283,24 @@ let private boardView model =
             div [ ClassName "collected-letters-section board-collected" ]
                 (h3 [] [ str "Collected Letters" ] :: body)
 
+    let viewportInfo = boardViewportElement model
+    let overlayMini =
+        match viewportInfo.ShouldShowMiniOverlay with
+        | true -> miniOverlayView model viewportInfo.VisibleWidth viewportInfo.VisibleHeight
+        | false -> None
+
+    let viewportWithOverlay =
+        match overlayMini with
+        | Some overlay ->
+            div [ ClassName "board-viewport-wrapper" ] [ viewportInfo.Element; overlay ]
+        | None ->
+            viewportInfo.Element
+
+    let boardElements =
+        viewportWithOverlay :: countdownOverlay model
+
     div [ ClassName "board-wrapper" ]
-        [ div [ ClassName "board" ] (boardCanvas model :: countdownOverlay model)
+        [ div [ ClassName "board" ] boardElements
           collectedSection ]
 
 let private scoreboardEntries model =
@@ -245,9 +398,17 @@ let view model dispatch =
             ]
         ]
     else
-        div [ ClassName "layout" ] [
+        let hideStats = ModelState.shouldHideStats model
+        let layoutClass =
+            if hideStats then "layout layout-compact"
+            else "layout"
+
+        div [ ClassName layoutClass ] [
             boardView model
-            statsView model dispatch
+            if hideStats then
+                fragment [] []
+            else
+                statsView model dispatch
         ]
 
 

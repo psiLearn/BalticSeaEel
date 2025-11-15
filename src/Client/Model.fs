@@ -4,6 +4,10 @@ open System
 open Shared
 open Shared.Game
 
+let defaultViewportWidth = 1200.0
+let defaultViewportHeight = 800.0
+let compactScreenThreshold = 900.0
+
 type GamePhase =
     | Splash
     | Countdown
@@ -34,7 +38,9 @@ type Model =
       BoardLetters: string array
       Scores: HighScore list
       ScoresLoading: bool
-      ScoresError: string option }
+      ScoresError: string option
+      ViewportWidth: float
+      ViewportHeight: float }
 
 let isRunning phase =
     match phase with
@@ -56,6 +62,12 @@ let isSaving phase =
     | GamePhase.SavingHighScore -> true
     | _ -> false
 
+let isCompactScreen (model: Model) =
+    model.ViewportWidth < compactScreenThreshold
+
+let shouldHideStats (model: Model) =
+    isRunning model.Phase && isCompactScreen model
+
 type Msg =
     | Tick of int
     | CountdownTick
@@ -73,6 +85,7 @@ type Msg =
     | ScoresLoaded of HighScore list
     | ScoresFailed of string
     | CelebrationDelayElapsed
+    | WindowResized of float * float
 
 let defaultVocabularyEntry: VocabularyEntry =
     { Topic = "Mer Baltique"
@@ -159,7 +172,9 @@ let initModel =
       BoardLetters = createBoardLetters ()
       Scores = []
       ScoresLoading = true
-      ScoresError = None }
+      ScoresError = None
+      ViewportWidth = defaultViewportWidth
+      ViewportHeight = defaultViewportHeight }
 
 let nextTargetChar model =
     if model.TargetIndex < model.TargetText.Length then

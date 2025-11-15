@@ -26,6 +26,7 @@ type GameplayConfig =
       StartCountdownMs: int
       LevelCountdownMs: int
       CelebrationDelayMs: int
+      MiniOverlayScale: float
       RotateSegmentLetters: bool
       FoodBurst: FoodBurstConfig
       BoardVisuals: BoardVisualConfig
@@ -38,6 +39,7 @@ module Config =
           StartCountdownMs = 3000
           LevelCountdownMs = 1500
           CelebrationDelayMs = 1200
+          MiniOverlayScale = 0.1
           RotateSegmentLetters = true
           FoodBurst =
             { Enabled = true

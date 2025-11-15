@@ -56,8 +56,13 @@ let private reactUseRef<'T> (value: 'T) : obj = jsNative
 let private reactUseEffect (callback: unit -> obj) (deps: obj array) : unit = jsNative
 
 let private prepareCanvas (canvas: HTMLCanvasElement) boardWidth boardHeight =
-    let pixelWidth = (float boardWidth * cellStep) - cellGap + (2.0 * canvasPadding)
-    let pixelHeight = (float boardHeight * cellStep) - cellGap + (2.0 * canvasPadding)
+    let pixelWidth =
+        if boardWidth = Game.boardWidth then boardPixelWidth
+        else (float boardWidth * cellStep) - cellGap + (2.0 * canvasPadding)
+
+    let pixelHeight =
+        if boardHeight = Game.boardHeight then boardPixelHeight
+        else (float boardHeight * cellStep) - cellGap + (2.0 * canvasPadding)
     let dpr =
         if isNull Browser.Dom.window || Browser.Dom.window.devicePixelRatio <= 0.0 then 1.0 else Browser.Dom.window.devicePixelRatio
 

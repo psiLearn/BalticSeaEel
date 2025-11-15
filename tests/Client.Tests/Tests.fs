@@ -1,5 +1,6 @@
 module Tests
 
+open System
 open Xunit
 open Elmish
 open Eel.Client.Model
@@ -11,6 +12,7 @@ module Game = Shared.Game
 module Update = Eel.Client.Update
 module Loop = Eel.Client.GameLoop
 module RenderingShared = Eel.Client.Rendering.Shared
+module View = Eel.Client.View
 
 let tickDelta = 40
 
@@ -594,4 +596,65 @@ let ``ensureFoodsForModel seeds up to configured maximum`` () =
     Assert.Equal(expectedCount, active.Length)
     Assert.Equal< int list >([0 .. expectedCount - 1], active |> List.map (fun token -> token.LetterIndex))
 
+[<Fact>]
+let ``boardDimensions matches calculated size`` () =
+    let expectedWidth =
+        (float Game.boardWidth * RenderingShared.cellStep)
+        - RenderingShared.cellGap
+        + (2.0 * RenderingShared.canvasPadding)
 
+    let expectedHeight =
+        (float Game.boardHeight * RenderingShared.cellStep)
+        - RenderingShared.cellGap
+        + (2.0 * RenderingShared.canvasPadding)
+
+    Assert.Equal(expectedWidth, RenderingShared.boardDimensions.PixelWidth, 5)
+    Assert.Equal(expectedHeight, RenderingShared.boardDimensions.PixelHeight, 5)
+
+[<Fact>]
+let ``mini overlay scale defaults to ten percent`` () =
+    Assert.Equal(0.1, Config.gameplay.MiniOverlayScale, 5)
+
+[<Fact>]
+let ``WindowResized updates viewport dimensions`` () =
+    let width, height = 800.0, 600.0
+    let updated, _ = Update.update (WindowResized(width, height)) initModel
+    Assert.Equal(width, updated.ViewportWidth, 5)
+    Assert.Equal(height, updated.ViewportHeight, 5)
+
+[<Fact>]
+let ``WindowResized falls back for invalid values`` () =
+    let updated, _ = Update.update (WindowResized(-10.0, Double.NaN)) initModel
+    Assert.Equal(defaultViewportWidth, updated.ViewportWidth, 5)
+    Assert.Equal(defaultViewportHeight, updated.ViewportHeight, 5)
+
+[<Fact>]
+let ``WindowResized ignores insignificant changes`` () =
+    let model = { initModel with ViewportWidth = 900.0; ViewportHeight = 600.0 }
+    let updated, cmd = Update.update (WindowResized(900.1, 600.1)) model
+    Assert.True(Object.ReferenceEquals(model, updated))
+    Assert.True(cmdIsEmpty cmd)
+
+[<Fact>]
+let ``WindowResized updates when screen differs`` () =
+    let model = { initModel with ViewportWidth = 900.0; ViewportHeight = 600.0 }
+    let newWidth, newHeight = 1200.0, 800.0
+    let updated, _ = Update.update (WindowResized(newWidth, newHeight)) model
+    Assert.Equal(newWidth, updated.ViewportWidth, 5)
+    Assert.Equal(newHeight, updated.ViewportHeight, 5)
+
+[<Fact>]
+let ``shouldHideStats true only when running on compact screen`` () =
+    let runningCompact =
+        { initModel with
+            Phase = GamePhase.Running
+            ViewportWidth = ModelState.compactScreenThreshold - 10.0 }
+    Assert.True(ModelState.shouldHideStats runningCompact)
+
+    let runningWide =
+        { runningCompact with ViewportWidth = ModelState.compactScreenThreshold + 50.0 }
+    Assert.False(ModelState.shouldHideStats runningWide)
+
+    let pausedCompact =
+        { runningCompact with Phase = GamePhase.Paused }
+    Assert.False(ModelState.shouldHideStats pausedCompact)
