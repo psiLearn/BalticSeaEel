@@ -20,6 +20,10 @@ node_modules/
 package-lock.json
 npm-debug.log*
 
+.sonarqube/
+.scannerwork/
+SonarLint.xml
+
 # OS artifacts
 Thumbs.db
 .DS_Store

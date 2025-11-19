@@ -175,6 +175,33 @@ reportgenerator `
 
 For JS/Fable tests, wrap `npm run test:client:fable` with [nyc](https://github.com/istanbuljs/nyc) or another coverage runner so it emits LCOV/Cobertura files that the merge step can consume.
 
+### SonarQube analysis
+
+1. Start a SonarQube instance. The repo includes a sample compose file under `c:\Tools\sonarqube-25.11.0.114957\sonar-stack\docker-compose.yml`:
+   ```powershell
+   docker compose -f c:\Tools\sonarqube-25.11.0.114957\sonar-stack\docker-compose.yml up -d
+   ```
+   Browse to `http://localhost:9000`, create an admin token (e.g., `ALE_SONAR`), and keep it handy.
+2. Install the .NET scanner if needed:
+   ```powershell
+   dotnet tool install --global dotnet-sonarscanner
+   ```
+3. Run the analysis from the repo root (replace the key/name/token to match your project):
+   ```powershell
+   $env:SONAR_TOKEN="your-generated-token"
+
+   dotnet sonarscanner begin `
+     /k:"Ale" `
+     /n:"Baltic Sea Eel" `
+     /d:sonar.host.url="http://localhost:9000" `
+     /d:sonar.login=$env:SONAR_TOKEN
+
+   dotnet build
+
+   dotnet sonarscanner end /d:sonar.login=$env:SONAR_TOKEN
+   ```
+   The scanner writes its intermediate files under `.sonarqube/` (already ignored). After the `end` step, open the SonarQube UI to inspect quality gates, code smells, and coverage imported from `dotnet test`.
+
 ### API documentation
 
 Swagger/OpenAPI is generated automatically via [Giraffe.OpenApi](https://github.com/giraffe-fsharp/Giraffe.OpenApi). When the server runs in development mode, browse to `https://localhost:5001/swagger` (or `http://localhost:5000/swagger`) to inspect the live contract.
