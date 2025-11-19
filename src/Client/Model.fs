@@ -16,6 +16,19 @@ type GamePhase =
     | GameOver
     | SavingHighScore
 
+type CelebrationState =
+    { LastPhrase: string option
+      Visible: bool }
+
+type GameplayState =
+    { HighlightWaves: float list
+      SpeedMs: int
+      PendingMoveMs: int
+      DirectionQueue: Direction list
+      LastEel: Point list }
+
+type IntermissionState = { CountdownMs: int }
+
 type Model =
     { Game: GameState
       PlayerName: string
@@ -26,14 +39,9 @@ type Model =
       TargetIndex: int
       PhraseQueue: string list
       NeedsNextPhrase: bool
-      LastCompletedPhrase: string option
-      CelebrationVisible: bool
-      HighlightWaves: float list
-      SpeedMs: int
-      PendingMoveMs: int
-      DirectionQueue: Direction list
-      LastEel: Point list
-      CountdownMs: int
+      Celebration: CelebrationState
+      Gameplay: GameplayState
+      Intermission: IntermissionState
       Phase: GamePhase
       BoardLetters: string array
       Scores: HighScore list
@@ -67,6 +75,19 @@ let isCompactScreen (model: Model) =
 
 let shouldHideStats (model: Model) =
     isRunning model.Phase && isCompactScreen model
+
+let celebrationPhrase (model: Model) =
+    model.Celebration.LastPhrase
+    |> Option.bind (fun phrase ->
+        if String.IsNullOrWhiteSpace phrase then None else Some phrase)
+
+let isCelebrationActive (model: Model) =
+    model.Phase = GamePhase.Countdown
+    && model.Celebration.Visible
+    && celebrationPhrase model |> Option.isSome
+
+let shouldHideCelebrationEel (model: Model) =
+    isCelebrationActive model
 
 type Msg =
     | Tick of int
@@ -160,14 +181,16 @@ let initModel =
       TargetIndex = 0
       PhraseQueue = remainingQueue
       NeedsNextPhrase = false
-      LastCompletedPhrase = None
-      CelebrationVisible = false
-      HighlightWaves = []
-      SpeedMs = initialSpeed
-      PendingMoveMs = 0
-      DirectionQueue = []
-      LastEel = (Game.initialState ()).Eel
-      CountdownMs = Config.gameplay.StartCountdownMs
+      Celebration =
+        { LastPhrase = None
+          Visible = false }
+      Gameplay =
+        { HighlightWaves = []
+          SpeedMs = initialSpeed
+          PendingMoveMs = 0
+          DirectionQueue = []
+          LastEel = (Game.initialState ()).Eel }
+      Intermission = { CountdownMs = Config.gameplay.StartCountdownMs }
       Phase = Splash
       BoardLetters = createBoardLetters ()
       Scores = []
