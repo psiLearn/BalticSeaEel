@@ -50,6 +50,15 @@ module private WindowStore =
 
 let private log category message = printfn "[Update|%s] %s" category message
 
+let private updateGameplay updater model =
+    { model with Gameplay = updater model.Gameplay }
+
+let private updateIntermission updater model =
+    { model with Intermission = updater model.Intermission }
+
+let private updateCelebration updater model =
+    { model with Celebration = updater model.Celebration }
+
 let private readStoredHighScore () =
     try
         let storage = window.localStorage
@@ -126,10 +135,10 @@ let private enableResizeListenerCmd : Cmd<Msg> = Cmd.none
 
 let private updateHighlightWave trigger deltaMs (model: Model) =
     if not foodBurstConfig.Enabled then
-        { model with HighlightWaves = [] }
+        model |> updateGameplay (fun g -> { g with HighlightWaves = [] })
     else
         let progressedWaves =
-            model.HighlightWaves
+            model.Gameplay.HighlightWaves
             |> List.map (fun wave -> wave + highlightSpeedSegmentsPerMs * float deltaMs)
 
         let withNewWave =
@@ -149,7 +158,7 @@ let private updateHighlightWave trigger deltaMs (model: Model) =
             limitedWaves
             |> List.filter (fun wave -> wave < maxSegments)
 
-        { model with HighlightWaves = remainingWaves }
+        model |> updateGameplay (fun g -> { g with HighlightWaves = remainingWaves })
 
 let private tryStopATick key =
 #if FABLE_COMPILER
@@ -249,14 +258,14 @@ let private stopCelebrationCmd : Cmd<Msg> =
 #endif
 
 let private withFreshLastEel (model: Model) =
-    { model with LastEel = model.Game.Eel }
+    model |> updateGameplay (fun g -> { g with LastEel = model.Game.Eel })
 
 let private movementProgress model =
-    match (ModelState.isRunning model.Phase) && model.SpeedMs > 0 with
+    match (ModelState.isRunning model.Phase) && model.Gameplay.SpeedMs > 0 with
     | true ->
-        model.PendingMoveMs
+        model.Gameplay.PendingMoveMs
         |> float
-        |> fun v -> v / float model.SpeedMs
+        |> fun v -> v / float model.Gameplay.SpeedMs
         |> max 0.0
         |> min 0.999
     | false -> 0.0
@@ -268,7 +277,7 @@ let private advancePhrase model =
         TargetIndex = 0
         PhraseQueue = rest
         NeedsNextPhrase = false
-        LastCompletedPhrase = None }
+        Celebration = { model.Celebration with LastPhrase = None } }
 
 let private ensureNextPhrase model =
     if model.NeedsNextPhrase || String.IsNullOrWhiteSpace model.TargetText then
@@ -408,13 +417,15 @@ let startLoopCmd () : Cmd<Msg> =
 
 let private startCountdownModel (model: Model) =
     { model with
-        CountdownMs = startCountdownMs
+        Intermission = { model.Intermission with CountdownMs = startCountdownMs }
         Phase = GamePhase.Countdown
-        PendingMoveMs = 0
-        DirectionQueue = []
+        Gameplay =
+            { model.Gameplay with
+                PendingMoveMs = 0
+                DirectionQueue = [] }
         Error = None
         ScoresError = None
-        CelebrationVisible = false }
+        Celebration = { model.Celebration with Visible = false } }
     |> withFreshLastEel
 
 let private handleStartGame model =
@@ -439,17 +450,21 @@ let private handleTogglePause model =
         tryStopTick ()
         { model with
             Phase = GamePhase.Paused
-            PendingMoveMs = 0
-            DirectionQueue = []
-            LastEel = model.Game.Eel },
+            Gameplay =
+                { model.Gameplay with
+                    PendingMoveMs = 0
+                    DirectionQueue = []
+                    LastEel = model.Game.Eel } },
         Cmd.none
     | GamePhase.Paused ->
         log "Game" "Resuming loop."
         { model with
             Phase = GamePhase.Running
-            PendingMoveMs = 0
-            DirectionQueue = []
-            LastEel = model.Game.Eel },
+            Gameplay =
+                { model.Gameplay with
+                    PendingMoveMs = 0
+                    DirectionQueue = []
+                    LastEel = model.Game.Eel } },
         startLoopCmd ()
     | _ -> model, Cmd.none
 
@@ -457,64 +472,67 @@ let private handleCountdownTick model =
     log "Countdown" "Tick."
     match model.Phase with
     | GamePhase.Countdown ->
-        let remaining = max 0 (model.CountdownMs - countdownStepMs)
+        let remaining = max 0 (model.Intermission.CountdownMs - countdownStepMs)
         if remaining <= 0 then
             tryStopCountdown ()
-            { model with CountdownMs = 0 }, Cmd.ofMsg CountdownFinished
+            { model with Intermission = { model.Intermission with CountdownMs = 0 } }, Cmd.ofMsg CountdownFinished
         else
-            { model with CountdownMs = remaining }, scheduleCountdownCmd ()
+            { model with Intermission = { model.Intermission with CountdownMs = remaining } }, scheduleCountdownCmd ()
     | _ -> model, Cmd.none
 
 let private handleCountdownFinished model =
     log "Countdown" "Finished."
     match model.Phase with
-    | GamePhase.Countdown when model.CountdownMs <= 0 ->
+    | GamePhase.Countdown when model.Intermission.CountdownMs <= 0 ->
         let updatedModel =
             { model with
                 Phase = GamePhase.Running
-                CountdownMs = 0
-                PendingMoveMs = 0
-                DirectionQueue = [] }
+                Intermission = { model.Intermission with CountdownMs = 0 }
+                Gameplay =
+                    { model.Gameplay with
+                        PendingMoveMs = 0
+                        DirectionQueue = [] } }
             |> ensureNextPhrase
             |> ensureFoodsForModel
             |> withFreshLastEel
 
-        log "Loop" $"Countdown complete. Starting loop at {model.SpeedMs} ms."
+        log "Loop" $"Countdown complete. Starting loop at {model.Gameplay.SpeedMs} ms."
         updatedModel, Cmd.batch [ stopCountdownCmd
                                   startLoopCmd () ]
     | _ -> model, Cmd.none
 
 let private handleCelebrationDelayElapsed model =
     let hasPhrase =
-        model.LastCompletedPhrase
+        model.Celebration.LastPhrase
         |> Option.exists (fun phrase -> not (String.IsNullOrWhiteSpace phrase))
 
     match model.Phase = GamePhase.Countdown && hasPhrase with
     | true ->
-        { model with CelebrationVisible = true }, Cmd.none
+        { model with Celebration = { model.Celebration with Visible = true } }, Cmd.none
     | false ->
         model, stopCelebrationCmd
 
 let private processTickMovement delta budget currentModel =
     let rec loop pending deltaBudget accModel commands =
-        if pending < accModel.SpeedMs then
+        if pending < accModel.Gameplay.SpeedMs then
             let updated =
-                { accModel with PendingMoveMs = pending }
+                { accModel with
+                    Gameplay = { accModel.Gameplay with PendingMoveMs = pending } }
                 |> updateHighlightWave false deltaBudget
             updated, pending, commands
         else
             let modelForMove =
-                match accModel.DirectionQueue with
+                match accModel.Gameplay.DirectionQueue with
                 | next :: rest ->
                     { accModel with
                         Game = Game.changeDirection next accModel.Game
-                        DirectionQueue = rest }
+                        Gameplay = { accModel.Gameplay with DirectionQueue = rest } }
                 | [] -> accModel
 
             let startSegments = modelForMove.Game.Eel
             let result = GameLoop.applyTick modelForMove
             let updatedModel, cmd = handleTickResult result
-            let remaining = max 0 (pending - accModel.SpeedMs)
+            let remaining = max 0 (pending - accModel.Gameplay.SpeedMs)
 
             let letterCollected =
                 result.Events
@@ -524,23 +542,27 @@ let private processTickMovement delta budget currentModel =
 
             let refreshedModel =
                 { updatedModel with
-                    PendingMoveMs = remaining
-                    LastEel = startSegments }
-                |> updateHighlightWave letterCollected accModel.SpeedMs
+                    Gameplay =
+                        { updatedModel.Gameplay with
+                            PendingMoveMs = remaining
+                            LastEel = startSegments } }
+                |> updateHighlightWave letterCollected accModel.Gameplay.SpeedMs
 
-            let consumedDelta = min deltaBudget accModel.SpeedMs
+            let consumedDelta = min deltaBudget accModel.Gameplay.SpeedMs
             loop remaining (max 0 (deltaBudget - consumedDelta)) refreshedModel (cmd :: commands)
 
-    loop (currentModel.PendingMoveMs + delta) budget currentModel []
+    loop (currentModel.Gameplay.PendingMoveMs + delta) budget currentModel []
 
 let private handleTick deltaMs model =
     if not (ModelState.isRunning model.Phase) then
         tryStopTick ()
         log "Loop" "Ignoring tick while game is paused."
         { model with
-            PendingMoveMs = 0
-            DirectionQueue = []
-            LastEel = model.Game.Eel },
+            Gameplay =
+                { model.Gameplay with
+                    PendingMoveMs = 0
+                    DirectionQueue = []
+                    LastEel = model.Game.Eel } },
         Cmd.none
     else
         let boundedDelta =
@@ -555,7 +577,7 @@ let private handleTick deltaMs model =
             | [ single ] -> single
             | _ -> Cmd.batch cmdList
 
-        { finalModel with PendingMoveMs = remainder }, command
+        { finalModel with Gameplay = { finalModel.Gameplay with PendingMoveMs = remainder } }, command
 
 let init () =
     log "Init" "Initializing model and starting commands."
@@ -594,7 +616,7 @@ let update msg model =
             updatedModel, Cmd.none
     | Tick deltaMs -> handleTick deltaMs model
     | ChangeDirection direction ->
-        let queue = model.DirectionQueue
+        let queue = model.Gameplay.DirectionQueue
         let referenceDirection =
             match queue with
             | [] -> model.Game.Direction
@@ -625,8 +647,10 @@ let update msg model =
 
             { model with
                 Game = updatedGame
-                LastEel = updatedGame.Eel
-                DirectionQueue = updatedQueue },
+                Gameplay =
+                    { model.Gameplay with
+                        LastEel = updatedGame.Eel
+                        DirectionQueue = updatedQueue } },
             Cmd.none
     | Restart ->
         log "Game" "Restart requested."
@@ -639,10 +663,12 @@ let update msg model =
                 Error = None
                 TargetText = ""
                 TargetIndex = 0
-                SpeedMs = initialSpeed
-                PendingMoveMs = 0
-                DirectionQueue = []
-                CountdownMs = levelCountdownMs
+                Gameplay =
+                    { model.Gameplay with
+                        SpeedMs = initialSpeed
+                        PendingMoveMs = 0
+                        DirectionQueue = [] }
+                Intermission = { model.Intermission with CountdownMs = levelCountdownMs }
                 Phase = GamePhase.Countdown
                 PhraseQueue = restartQueue
                 BoardLetters = createBoardLetters () }
@@ -707,9 +733,11 @@ let update msg model =
                 Error = None
                 Scores = mergedScores
                 ScoresLoading = false
-                CountdownMs = startCountdownMs
-                PendingMoveMs = 0
-                DirectionQueue = [] }
+                Intermission = { model.Intermission with CountdownMs = startCountdownMs }
+                Gameplay =
+                    { model.Gameplay with
+                        PendingMoveMs = 0
+                        DirectionQueue = [] } }
              |> withFreshLastEel),
             Cmd.batch [ enableStartHotkeyCmd
                         fetchScoresCmd ]

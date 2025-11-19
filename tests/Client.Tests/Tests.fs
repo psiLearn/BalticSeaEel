@@ -16,6 +16,15 @@ module View = Eel.Client.View
 
 let tickDelta = 40
 
+let private mapGameplay updater model =
+    { model with Gameplay = updater model.Gameplay }
+
+let private mapIntermission updater model =
+    { model with Intermission = updater model.Intermission }
+
+let private mapCelebration updater model =
+    { model with Celebration = updater model.Celebration }
+
 let private withTarget target index =
     { initModel with
         TargetText = target
@@ -120,7 +129,9 @@ let ``update Tick stops loop when game already over`` () =
             Phase = GamePhase.Running
             HighScore = Some { Name = "A"; Score = 999 }
             ScoresLoading = false }
-    let model = { model with PendingMoveMs = model.SpeedMs }
+    let model =
+        model
+        |> mapGameplay (fun g -> { g with PendingMoveMs = model.Gameplay.SpeedMs })
 
     let updated, cmd = Update.update (Tick tickDelta) model
 
@@ -151,7 +162,9 @@ let ``update Tick advances target when collecting letter`` () =
             PhraseQueue = []
             TargetIndex = 0
             ScoresLoading = false }
-    let model = { model with PendingMoveMs = model.SpeedMs }
+    let model =
+        model
+        |> mapGameplay (fun g -> { g with PendingMoveMs = model.Gameplay.SpeedMs })
 
     let updated, cmd = Update.update (Tick tickDelta) model
 
@@ -174,13 +187,13 @@ let ``update Tick accumulates pending before movement`` () =
         { initModel with
             Game = game
             Phase = GamePhase.Running
-            ScoresLoading = false
-            PendingMoveMs = 0 }
+            ScoresLoading = false }
+        |> mapGameplay (fun g -> { g with PendingMoveMs = 0 })
 
     let updated, cmd = Update.update (Tick tickDelta) model
 
     Assert.Equal<Point list>(game.Eel, updated.Game.Eel)
-    Assert.Equal(model.PendingMoveMs + 40, updated.PendingMoveMs)
+    Assert.Equal(model.Gameplay.PendingMoveMs + 40, updated.Gameplay.PendingMoveMs)
     Assert.True(cmdIsEmpty cmd)
 
 [<Fact>]
@@ -197,14 +210,14 @@ let ``update Tick catches up when pending spans multiple moves`` () =
         { initModel with
             Game = game
             Phase = GamePhase.Running
-            ScoresLoading = false
-            PendingMoveMs = initModel.SpeedMs * 2 }
+            ScoresLoading = false }
+        |> mapGameplay (fun g -> { g with PendingMoveMs = initModel.Gameplay.SpeedMs * 2 })
 
     let updated, _ = Update.update (Tick tickDelta) model
     let movedHead = updated.Game.Eel |> List.head
 
     Assert.Equal(head.X + 2, movedHead.X)
-    Assert.True(updated.PendingMoveMs < updated.SpeedMs)
+    Assert.True(updated.Gameplay.PendingMoveMs < updated.Gameplay.SpeedMs)
 
 [<Fact>]
 let ``ChangeDirection queues when mid step`` () =
@@ -212,13 +225,13 @@ let ``ChangeDirection queues when mid step`` () =
         { initModel with
             Game = { Game.initialState () with Direction = Direction.Right }
             Phase = GamePhase.Running
-            ScoresLoading = false
-            PendingMoveMs = 20 }
+            ScoresLoading = false }
+        |> mapGameplay (fun g -> { g with PendingMoveMs = 20 })
 
     let updated, _ = Update.update (ChangeDirection Direction.Up) model
 
     Assert.Equal(Direction.Up, updated.Game.Direction)
-    Assert.Equal<Direction list>([ Direction.Up ], updated.DirectionQueue)
+    Assert.Equal<Direction list>([ Direction.Up ], updated.Gameplay.DirectionQueue)
 
 [<Fact>]
 let ``queued direction applies after full step`` () =
@@ -226,16 +239,18 @@ let ``queued direction applies after full step`` () =
         { initModel with
             Game = { Game.initialState () with Direction = Direction.Right }
             Phase = GamePhase.Running
-            ScoresLoading = false
-            PendingMoveMs = 10 }
+            ScoresLoading = false }
+        |> mapGameplay (fun g -> { g with PendingMoveMs = 10 })
 
     let queued, _ = Update.update (ChangeDirection Direction.Up) model
-    let ready = { queued with PendingMoveMs = queued.SpeedMs }
+    let ready =
+        queued
+        |> mapGameplay (fun g -> { g with PendingMoveMs = queued.Gameplay.SpeedMs })
 
     let updated, _ = Update.update (Tick tickDelta) ready
 
     Assert.Equal(Direction.Up, updated.Game.Direction)
-    Assert.Equal<Direction list>([], updated.DirectionQueue)
+    Assert.Equal<Direction list>([], updated.Gameplay.DirectionQueue)
 
 [<Fact>]
 let ``ChangeDirection applies immediately when aligned`` () =
@@ -243,13 +258,13 @@ let ``ChangeDirection applies immediately when aligned`` () =
         { initModel with
             Game = { Game.initialState () with Direction = Direction.Right }
             Phase = GamePhase.Running
-            ScoresLoading = false
-            PendingMoveMs = 0 }
+            ScoresLoading = false }
+        |> mapGameplay (fun g -> { g with PendingMoveMs = 0 })
 
     let updated, _ = Update.update (ChangeDirection Direction.Up) model
 
     Assert.Equal(Direction.Up, updated.Game.Direction)
-    Assert.Equal<Direction list>([ Direction.Up ], updated.DirectionQueue)
+    Assert.Equal<Direction list>([ Direction.Up ], updated.Gameplay.DirectionQueue)
 
 [<Fact>]
 let ``ChangeDirection queues while mid step`` () =
@@ -257,13 +272,13 @@ let ``ChangeDirection queues while mid step`` () =
         { initModel with
             Game = { Game.initialState () with Direction = Direction.Right }
             Phase = GamePhase.Running
-            ScoresLoading = false
-            PendingMoveMs = initModel.SpeedMs / 2 }
+            ScoresLoading = false }
+        |> mapGameplay (fun g -> { g with PendingMoveMs = initModel.Gameplay.SpeedMs / 2 })
 
     let updated, _ = Update.update (ChangeDirection Direction.Up) midModel
 
     Assert.Equal(Direction.Up, updated.Game.Direction)
-    Assert.Equal<Direction list>([ Direction.Up ], updated.DirectionQueue)
+    Assert.Equal<Direction list>([ Direction.Up ], updated.Gameplay.DirectionQueue)
 
 [<Fact>]
 let ``multiple inputs buffer sequential turns`` () =
@@ -271,37 +286,39 @@ let ``multiple inputs buffer sequential turns`` () =
         { initModel with
             Game = { Game.initialState () with Direction = Direction.Right }
             Phase = GamePhase.Running
-            ScoresLoading = false
-            PendingMoveMs = initModel.SpeedMs / 2 }
+            ScoresLoading = false }
+        |> mapGameplay (fun g -> { g with PendingMoveMs = initModel.Gameplay.SpeedMs / 2 })
 
     let first, _ = Update.update (ChangeDirection Direction.Up) baseModel
     let second, _ = Update.update (ChangeDirection Direction.Left) first
 
     Assert.Equal(Direction.Up, second.Game.Direction)
-    Assert.Equal<Direction list>([ Direction.Up; Direction.Left ], second.DirectionQueue)
+    Assert.Equal<Direction list>([ Direction.Up; Direction.Left ], second.Gameplay.DirectionQueue)
 
-    let ready = { second with PendingMoveMs = second.SpeedMs }
+    let ready =
+        second
+        |> mapGameplay (fun g -> { g with PendingMoveMs = second.Gameplay.SpeedMs })
     let afterFirstTurn, _ = Update.update (Tick tickDelta) ready
     Assert.Equal(Direction.Up, afterFirstTurn.Game.Direction)
-    Assert.Equal<Direction list>([ Direction.Left ], afterFirstTurn.DirectionQueue)
+    Assert.Equal<Direction list>([ Direction.Left ], afterFirstTurn.Gameplay.DirectionQueue)
 
 [<Fact>]
 let ``TogglePause switches between running and paused`` () =
     let running =
         { initModel with
             Phase = GamePhase.Running
-            ScoresLoading = false
-            PendingMoveMs = 10 }
+            ScoresLoading = false }
+        |> mapGameplay (fun g -> { g with PendingMoveMs = 10 })
 
     let paused, _ = Update.update TogglePause running
     Assert.Equal(GamePhase.Paused, paused.Phase)
-    Assert.Equal(0, paused.PendingMoveMs)
-    Assert.Equal<Direction list>([], paused.DirectionQueue)
+    Assert.Equal(0, paused.Gameplay.PendingMoveMs)
+    Assert.Equal<Direction list>([], paused.Gameplay.DirectionQueue)
 
     let resumed, cmd = Update.update TogglePause paused
     Assert.Equal(GamePhase.Running, resumed.Phase)
-    Assert.Equal(0, resumed.PendingMoveMs)
-    Assert.Equal<Direction list>([], resumed.DirectionQueue)
+    Assert.Equal(0, resumed.Gameplay.PendingMoveMs)
+    Assert.Equal<Direction list>([], resumed.Gameplay.DirectionQueue)
     Assert.True(cmdIsEmpty cmd)
 
 [<Fact>]
@@ -311,8 +328,10 @@ let ``Restart clears pending state and direction queue`` () =
         { initModel with
             Phase = GamePhase.Running
             ScoresLoading = false
-            PendingMoveMs = 80
-            DirectionQueue = [ Direction.Up; Direction.Left ]
+            Gameplay =
+                { initModel.Gameplay with
+                    PendingMoveMs = 80
+                    DirectionQueue = [ Direction.Up; Direction.Left ] }
             Game =
                 { Game.initialState () with
                     Eel = [ head ]
@@ -320,8 +339,8 @@ let ``Restart clears pending state and direction queue`` () =
 
     let reset, cmd = Update.update Restart model
     Assert.Equal(GamePhase.Countdown, reset.Phase)
-    Assert.Equal(0, reset.PendingMoveMs)
-    Assert.Equal<Direction list>([], reset.DirectionQueue)
+    Assert.Equal(0, reset.Gameplay.PendingMoveMs)
+    Assert.Equal<Direction list>([], reset.Gameplay.DirectionQueue)
     Assert.True(cmdHasEffects cmd)
 
 
@@ -367,7 +386,7 @@ let ``applyTick completes phrase and prepares next round`` () =
             Phase = GamePhase.Running
             TargetText = "hi"
             TargetIndex = 1
-            SpeedMs = 200
+            Gameplay = { initModel.Gameplay with SpeedMs = 200 }
             PhraseQueue = [ "example phrase" ]
             ScoresLoading = false }
 
@@ -376,7 +395,7 @@ let ``applyTick completes phrase and prepares next round`` () =
     Assert.False(ModelState.isRunning result.Model.Phase)
     Assert.Equal("hi", result.Model.TargetText)
     Assert.Equal(0, result.Model.TargetIndex)
-    Assert.Equal(Config.gameplay.LevelCountdownMs, result.Model.CountdownMs)
+    Assert.Equal(Config.gameplay.LevelCountdownMs, result.Model.Intermission.CountdownMs)
     Assert.Equal<string list>([ "example phrase" ], result.Model.PhraseQueue)
     Assert.Contains(Loop.CleanupLoop, result.Effects)
     Assert.DoesNotContain(Loop.FetchVocabulary, result.Effects)
@@ -389,7 +408,7 @@ let ``applyTick completes phrase and prepares next round`` () =
         | [ Loop.PhraseCompleted value ] -> value
         | _ -> failwith "Expected phrase completed event"
 
-    Assert.Equal(result.Model.SpeedMs, speed)
+    Assert.Equal(result.Model.Gameplay.SpeedMs, speed)
 
 [<Fact>]
 let ``applyTick emits high score persistence when score improves`` () =
@@ -454,14 +473,14 @@ let ``StartGame hides splash and queues countdown`` () =
         { initModel with
             Phase = GamePhase.Splash
             ScoresLoading = false
-            CountdownMs = Config.gameplay.StartCountdownMs
-            CelebrationVisible = true }
+            Intermission = { initModel.Intermission with CountdownMs = Config.gameplay.StartCountdownMs }
+            Celebration = { initModel.Celebration with Visible = true } }
 
     let updated, cmd = Update.update StartGame model
 
     Assert.Equal(GamePhase.Countdown, updated.Phase)
-    Assert.Equal(Config.gameplay.StartCountdownMs, updated.CountdownMs)
-    Assert.False(updated.CelebrationVisible)
+    Assert.Equal(Config.gameplay.StartCountdownMs, updated.Intermission.CountdownMs)
+    Assert.False(updated.Celebration.Visible)
     Assert.True(cmdHasEffects cmd)
 
 [<Fact>]
@@ -470,7 +489,7 @@ let ``StartGame ignored when splash already hidden`` () =
         { initModel with
             Phase = GamePhase.Running
             ScoresLoading = false
-            CountdownMs = 2000 }
+            Intermission = { initModel.Intermission with CountdownMs = 2000 } }
 
     let updated, cmd = Update.update StartGame model
     Assert.Equal(model, updated)
@@ -482,7 +501,7 @@ let ``StartGame ignored while scores still loading`` () =
         { initModel with
             Phase = GamePhase.Splash
             ScoresLoading = true
-            CountdownMs = Config.gameplay.StartCountdownMs }
+            Intermission = { initModel.Intermission with CountdownMs = Config.gameplay.StartCountdownMs } }
 
     let updated, cmd = Update.update StartGame model
     Assert.Equal(model, updated)
@@ -494,11 +513,13 @@ let ``CelebrationDelayElapsed reveals overlay only during countdown`` () =
         { initModel with
             Phase = GamePhase.Countdown
             ScoresLoading = false
-            LastCompletedPhrase = Some "Demo"
-            CelebrationVisible = false }
+            Celebration =
+                { initModel.Celebration with
+                    LastPhrase = Some "Demo"
+                    Visible = false } }
 
     let updated, cmd = Update.update CelebrationDelayElapsed model
-    Assert.True(updated.CelebrationVisible)
+    Assert.True(updated.Celebration.Visible)
     Assert.True(cmdIsEmpty cmd)
 
 [<Fact>]
@@ -507,8 +528,10 @@ let ``CelebrationDelayElapsed stops pending timer when inactive`` () =
         { initModel with
             Phase = GamePhase.Running
             ScoresLoading = false
-            LastCompletedPhrase = Some "Demo"
-            CelebrationVisible = false }
+            Celebration =
+                { initModel.Celebration with
+                    LastPhrase = Some "Demo"
+                    Visible = false } }
 
     let updated, cmd = Update.update CelebrationDelayElapsed model
     Assert.Equal(model, updated)
@@ -521,7 +544,7 @@ let ``buildSegmentInfos uses last eel during countdown`` () =
         { initModel with
             Phase = GamePhase.Countdown
             ScoresLoading = false
-            LastEel = lastPath
+            Gameplay = { initModel.Gameplay with LastEel = lastPath }
             Game =
                 { initModel.Game with
                     Eel = [ { X = 1; Y = 1 } ]
@@ -571,7 +594,7 @@ let ``ScoresFailed records error and stops loading`` () =
 
 [<Fact>]
 let ``initModel speed honors config`` () =
-    Assert.Equal(Config.gameplay.InitialSpeedMs, initModel.SpeedMs)
+    Assert.Equal(Config.gameplay.InitialSpeedMs, initModel.Gameplay.SpeedMs)
 
 [<Fact>]
 let ``ensureFoodsForModel seeds up to configured maximum`` () =

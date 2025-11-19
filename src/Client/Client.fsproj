@@ -13,6 +13,9 @@
     <Compile Include="Rendering/Shared.fs" />
     <Compile Include="Rendering/CanvasRenderer.fs" />
     <Compile Include="Rendering/KonvaRenderer.fs" />
+    <Compile Include="View/CelebrationView.fs" />
+    <Compile Include="View/IntermissionView.fs" />
+    <Compile Include="View/GameScreen.fs" />
     <Compile Include="View.fs" />
     <Compile Include="App.fs" />
   </ItemGroup>

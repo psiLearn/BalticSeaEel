@@ -179,10 +179,10 @@ let view (model: Model) =
             box JS.undefined)
         [| box model.Game
            box model.BoardLetters
-           box model.PendingMoveMs
+           box model.Gameplay.PendingMoveMs
            box model.TargetText
-           box model.LastEel
-           box model.SpeedMs
+           box model.Gameplay.LastEel
+           box model.Gameplay.SpeedMs
            box (ModelState.isRunning model.Phase) |]
 
     canvas [ Ref(fun el ->

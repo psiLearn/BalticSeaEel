@@ -44,7 +44,7 @@ type RenderEngine =
 
 let highlightForSegment model idx =
     let baseHighlight =
-        model.HighlightWaves
+        model.Gameplay.HighlightWaves
         |> List.map (fun progress ->
             let distance = abs (progress - float idx)
             if distance < 1.0 then 1.0 - distance else 0.0)
@@ -60,41 +60,44 @@ let boardLetterFor (model: Model) (point: Point) =
     else
         ""
 
-let collectAssignedLetters model =
-    let built, _ = progressParts model
-    built
-    |> Seq.toList
-    |> List.mapi (fun idx ch -> idx, displayChar ch)
-    |> List.fold
-        (fun acc (idx, letter) ->
-            if idx < model.Game.Eel.Length - 1 then
-                acc |> Map.add idx letter
-            else
-                acc)
+let collectAssignedLetters segmentCount model =
+    if segmentCount <= 1 then
         Map.empty
+    else
+        let built, _ = progressParts model
+        built
+        |> Seq.toList
+        |> List.mapi (fun idx ch -> idx, displayChar ch)
+        |> List.fold
+            (fun acc (idx, letter) ->
+                if idx < segmentCount - 1 then
+                    acc |> Map.add idx letter
+                else
+                    acc)
+            Map.empty
 
 let buildSegmentInfos (model: Model) =
     let renderSegments =
         if ModelState.isRunning model.Phase then
             model.Game.Eel
-        elif not (List.isEmpty model.LastEel) then
-            model.LastEel
+        elif not (List.isEmpty model.Gameplay.LastEel) then
+            model.Gameplay.LastEel
         else
             model.Game.Eel
 
     let currentSegmentsRaw = renderSegments |> List.toArray
-    let previousSegmentsRaw = model.LastEel |> List.toArray
+    let previousSegmentsRaw = model.Gameplay.LastEel |> List.toArray
     let maxSegments = max 1 (max currentSegmentsRaw.Length previousSegmentsRaw.Length)
-    let assignedLetters = collectAssignedLetters model
+    let assignedLetters = collectAssignedLetters maxSegments model
 
     let previewDirection =
-        match model.DirectionQueue with
+        match model.Gameplay.DirectionQueue with
         | next :: _ -> next
         | [] -> model.Game.Direction
 
     let previewActive =
         ModelState.isRunning model.Phase
-        && not (List.isEmpty model.DirectionQueue)
+        && not (List.isEmpty model.Gameplay.DirectionQueue)
 
     let padSegments (segments: Point array) =
         match segments.Length with
@@ -111,8 +114,8 @@ let buildSegmentInfos (model: Model) =
         if ModelState.isRunning model.Phase then padSegments previousSegmentsRaw else currentSegments
 
     let progress =
-        if ModelState.isRunning model.Phase && model.SpeedMs > 0 then
-            model.PendingMoveMs |> float |> fun v -> v / float model.SpeedMs |> max 0.0 |> min 0.999
+        if ModelState.isRunning model.Phase && model.Gameplay.SpeedMs > 0 then
+            model.Gameplay.PendingMoveMs |> float |> fun v -> v / float model.Gameplay.SpeedMs |> max 0.0 |> min 0.999
         else
             0.0
 

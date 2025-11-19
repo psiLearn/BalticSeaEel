@@ -42,7 +42,7 @@ let private computeHighScore (playerName: string) (current: HighScore option) (n
 
 let private phraseCompleted (model: Model) (currentGame: GameState) =
     let newSpeed =
-        model.SpeedMs
+        model.Gameplay.SpeedMs
         |> float
         |> (*) 0.95
         |> int
@@ -57,13 +57,15 @@ let private phraseCompleted (model: Model) (currentGame: GameState) =
 
     { model with
         Game = restartedGame
-        SpeedMs = newSpeed
-        CountdownMs = levelCountdownMs
+        Gameplay = { model.Gameplay with SpeedMs = newSpeed }
+        Intermission = { model.Intermission with CountdownMs = levelCountdownMs }
         Phase = GamePhase.Countdown
         NeedsNextPhrase = true
         TargetIndex = 0
-        LastCompletedPhrase = Some model.TargetText
-        CelebrationVisible = false },
+        Celebration =
+            { model.Celebration with
+                LastPhrase = Some model.TargetText
+                Visible = false } },
     newSpeed
 
 let maxVisibleFoods = Config.gameplay.MaxVisibleFoods
