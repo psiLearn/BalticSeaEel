@@ -562,6 +562,37 @@ let ``buildSegmentInfos uses last eel during countdown`` () =
     Assert.Equal(expectedY, head.Y, 5)
 
 [<Fact>]
+let ``buildSegmentInfos displays celebration phrase on stored eel`` () =
+    let phrase = "SEA"
+    let lastPath =
+        [ { X = 2; Y = 2 }
+          { X = 2; Y = 3 }
+          { X = 2; Y = 4 } ]
+
+    let model =
+        { initModel with
+            Phase = GamePhase.Countdown
+            ScoresLoading = false
+            Celebration =
+                { initModel.Celebration with
+                    LastPhrase = Some phrase
+                    Visible = false }
+            Gameplay = { initModel.Gameplay with LastEel = lastPath }
+            Game =
+                { initModel.Game with
+                    Eel = [ { X = 0; Y = 0 } ]
+                    Direction = Direction.Right } }
+
+    let infos = RenderingShared.buildSegmentInfos model
+    let letters =
+        infos
+        |> Seq.choose (fun info -> info.Letter)
+        |> Seq.truncate phrase.Length
+        |> Seq.toList
+
+    Assert.Equal<string list>([ "S"; "E"; "A" ], letters)
+
+[<Fact>]
 let ``ScoresLoaded sorts entries and updates high score`` () =
     let entries =
         [ { Name = "Mika"; Score = 15 }

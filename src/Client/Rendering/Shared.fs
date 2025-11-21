@@ -61,7 +61,7 @@ let boardLetterFor (model: Model) (point: Point) =
         ""
 
 let collectAssignedLetters segmentCount model =
-    if segmentCount <= 1 then
+    if segmentCount <= 0 then
         Map.empty
     else
         let built, _ = progressParts model
@@ -70,7 +70,7 @@ let collectAssignedLetters segmentCount model =
         |> List.mapi (fun idx ch -> idx, displayChar ch)
         |> List.fold
             (fun acc (idx, letter) ->
-                if idx < segmentCount - 1 then
+                if idx < segmentCount then
                     acc |> Map.add idx letter
                 else
                     acc)
@@ -88,7 +88,18 @@ let buildSegmentInfos (model: Model) =
     let currentSegmentsRaw = renderSegments |> List.toArray
     let previousSegmentsRaw = model.Gameplay.LastEel |> List.toArray
     let maxSegments = max 1 (max currentSegmentsRaw.Length previousSegmentsRaw.Length)
-    let assignedLetters = collectAssignedLetters maxSegments model
+
+    let celebrationText = ModelState.celebrationPhrase model
+
+    let effectiveModel =
+        match celebrationText, ModelState.isRunning model.Phase with
+        | Some phrase, false ->
+            { model with
+                TargetText = phrase
+                TargetIndex = phrase.Length }
+        | _ -> model
+
+    let assignedLetters = collectAssignedLetters maxSegments effectiveModel
 
     let previewDirection =
         match model.Gameplay.DirectionQueue with
