@@ -24,6 +24,11 @@ npm-debug.log*
 .scannerwork/
 SonarLint.xml
 
+# Local HTTPS certs
+*.pem
+*.crt
+*.key
+
 # OS artifacts
 Thumbs.db
 .DS_Store

@@ -175,6 +175,40 @@ reportgenerator `
 
 For JS/Fable tests, wrap `npm run test:client:fable` with [nyc](https://github.com/istanbuljs/nyc) or another coverage runner so it emits LCOV/Cobertura files that the merge step can consume.
 
+### Progressive Web App build & install
+
+1. **Build exactly like production** – `npm run build` already emits everything needed for the PWA: the hashed bundles, Workbox precache manifest, and `dist/sw.js`. There is no extra script; just run the standard build and host the `dist` output.
+2. **Serve over HTTPS when testing** – install prompts and service workers require a secure origin. Quick options:
+   - Generate a throwaway self-signed cert once (PowerShell example):
+     ```powershell
+     openssl req -x509 -nodes -days 365 -newkey rsa:2048 `
+       -keyout localhost-key.pem `
+       -out localhost-cert.pem `
+       -subj "/CN=localhost"
+     ```
+     Then run `npx http-server dist --ssl --cert localhost-cert.pem --key localhost-key.pem` for local smoke tests.
+   - Deploy the contents of `dist` to GitHub Pages, Azure Static Web Apps, Netlify, etc.
+   - Use Chrome DevTools’ Lighthouse PWA audit to verify offline caching/install readiness.
+3. **Installation guidance** – document the platform-specific flow for testers:
+   - **Android Chrome / Edge**: open the overflow menu → *Install app*.
+   - **iOS Safari**: tap Share → *Add to Home Screen*.
+   - **Desktop Chromium (Chrome, Edge)**: click the install icon in the omnibox.
+   - **Android Emulator**: launch the emulator (via Android Studio), open Chrome inside the emulated device, and browse to your HTTPS dev URL (e.g. `https://10.0.2.2:8443` if you’re serving with `http-server --ssl`). Once the page loads, tap the overflow menu → *Install app* just like on a real phone.
+   - **iOS Simulator**: run the simulator via Xcode, open Safari to the HTTPS dev URL, and use Share → *Add to Home Screen*.
+4. **Offline expectations** – the Workbox configuration precaches the immutable bundles and keeps `/api` calls `NetworkFirst`. Users can continue playing with cached assets, and the game will refresh scores once connectivity returns.
+5. **MAUI & PWA parity** – the Elmish client is shared between MAUI and the PWA bundle. Run both builds before a release to ensure gameplay stays identical, even if you lean on native shells for distribution.
+
+### Tooling installation overview
+
+| Tool / SDK            | Purpose                                     | Quick installation                                                                 |
+|-----------------------|---------------------------------------------|-------------------------------------------------------------------------------------|
+| Node.js 18+ / npm     | Vite dev server, client bundling            | https://nodejs.org (LTS installer)                                                 |
+| .NET 8 SDK            | Server build/tests, Elmish tooling          | https://dotnet.microsoft.com/download/dotnet/8.0                                   |
+| PostgreSQL 15+        | Persistent scores / vocabulary              | https://www.postgresql.org/download/ (or Docker image `postgres:15`)               |
+| OpenSSL (optional)    | Self-signed cert for local HTTPS testing    | Use Git Bash/WSL or https://slproweb.com/products/Win32OpenSSL.html                |
+| SonarScanner for .NET | Static analysis (optional)                  | `dotnet tool install --global dotnet-sonarscanner`                                 |
+| Android Studio / Xcode| Emulator/simulator for install testing      | https://developer.android.com/studio / https://developer.apple.com/xcode/          |
+
 ### SonarQube analysis
 
 1. Start a SonarQube instance. The repo includes a sample compose file under `c:\Tools\sonarqube-25.11.0.114957\sonar-stack\docker-compose.yml`:

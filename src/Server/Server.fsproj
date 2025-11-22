@@ -13,6 +13,7 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="FSharp.Core" Version="9.0.303" />
+    <PackageReference Include="FsSonarRunnerCore" Version="3.2.391" />
     <PackageReference Include="Giraffe" Version="8.0.0-alpha-003" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.1" />
     <PackageReference Include="Serilog.AspNetCore" Version="8.0.1" />
