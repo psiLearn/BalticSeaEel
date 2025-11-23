@@ -12,7 +12,8 @@ Baltic Sea Eel is a SAFE-stack take on the classic snake formula. Each eel segme
 
 ## Controls
 
-- `Arrow` keys or `WASD` to steer the eel.
+- `Arrow` keys or `WASD` to steer the eel on desktop.
+- Swipe anywhere on touch devices to change direction (swipe direction = turn direction).
 - `Space` to restart after a game-over or whenever you want to reset.
 
 ## Prerequisites
@@ -180,12 +181,14 @@ For JS/Fable tests, wrap `npm run test:client:fable` with [nyc](https://github.c
 1. **Build exactly like production** – `npm run build` already emits everything needed for the PWA: the hashed bundles, Workbox precache manifest, and `dist/sw.js`. There is no extra script; just run the standard build and host the `dist` output.
 2. **Serve over HTTPS when testing** – install prompts and service workers require a secure origin. Quick options:
    - Generate a throwaway self-signed cert once (PowerShell example):
+
      ```powershell
      openssl req -x509 -nodes -days 365 -newkey rsa:2048 `
        -keyout localhost-key.pem `
        -out localhost-cert.pem `
        -subj "/CN=localhost"
      ```
+
      Then run `npx http-server dist --ssl --cert localhost-cert.pem --key localhost-key.pem` for local smoke tests.
    - Deploy the contents of `dist` to GitHub Pages, Azure Static Web Apps, Netlify, etc.
    - Use Chrome DevTools’ Lighthouse PWA audit to verify offline caching/install readiness.
@@ -202,25 +205,30 @@ For JS/Fable tests, wrap `npm run test:client:fable` with [nyc](https://github.c
 
 | Tool / SDK            | Purpose                                     | Quick installation                                                                 |
 |-----------------------|---------------------------------------------|-------------------------------------------------------------------------------------|
-| Node.js 18+ / npm     | Vite dev server, client bundling            | https://nodejs.org (LTS installer)                                                 |
-| .NET 8 SDK            | Server build/tests, Elmish tooling          | https://dotnet.microsoft.com/download/dotnet/8.0                                   |
-| PostgreSQL 15+        | Persistent scores / vocabulary              | https://www.postgresql.org/download/ (or Docker image `postgres:15`)               |
-| OpenSSL (optional)    | Self-signed cert for local HTTPS testing    | Use Git Bash/WSL or https://slproweb.com/products/Win32OpenSSL.html                |
+| Node.js 18+ / npm     | Vite dev server, client bundling            | <https://nodejs.org> (LTS installer)                                                 |
+| .NET 8 SDK            | Server build/tests, Elmish tooling          | <https://dotnet.microsoft.com/download/dotnet/8.0>                                   |
+| PostgreSQL 15+        | Persistent scores / vocabulary              | <https://www.postgresql.org/download/> (or Docker image `postgres:15`)               |
+| OpenSSL (optional)    | Self-signed cert for local HTTPS testing    | Use Git Bash/WSL or <https://slproweb.com/products/Win32OpenSSL.html>                |
 | SonarScanner for .NET | Static analysis (optional)                  | `dotnet tool install --global dotnet-sonarscanner`                                 |
-| Android Studio / Xcode| Emulator/simulator for install testing      | https://developer.android.com/studio / https://developer.apple.com/xcode/          |
+| Android Studio / Xcode| Emulator/simulator for install testing      | <https://developer.android.com/studio> / <https://developer.apple.com/xcode/>          |
 
 ### SonarQube analysis
 
 1. Start a SonarQube instance. The repo includes a sample compose file under `c:\Tools\sonarqube-25.11.0.114957\sonar-stack\docker-compose.yml`:
+
    ```powershell
    docker compose -f c:\Tools\sonarqube-25.11.0.114957\sonar-stack\docker-compose.yml up -d
    ```
+
    Browse to `http://localhost:9000`, create an admin token (e.g., `ALE_SONAR`), and keep it handy.
 2. Install the .NET scanner if needed:
+
    ```powershell
    dotnet tool install --global dotnet-sonarscanner
    ```
+
 3. Run the analysis from the repo root (replace the key/name/token to match your project):
+
    ```powershell
    $env:SONAR_TOKEN="your-generated-token"
 
@@ -234,6 +242,7 @@ For JS/Fable tests, wrap `npm run test:client:fable` with [nyc](https://github.c
 
    dotnet sonarscanner end /d:sonar.login=$env:SONAR_TOKEN
    ```
+
    The scanner writes its intermediate files under `.sonarqube/` (already ignored). After the `end` step, open the SonarQube UI to inspect quality gates, code smells, and coverage imported from `dotnet test`.
 
 ### API documentation

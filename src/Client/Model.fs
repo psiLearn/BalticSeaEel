@@ -43,6 +43,7 @@ type Model =
       Gameplay: GameplayState
       Intermission: IntermissionState
       Phase: GamePhase
+      IsTouchDevice: bool
       BoardLetters: string array
       Scores: HighScore list
       ScoresLoading: bool
@@ -74,7 +75,7 @@ let isCompactScreen (model: Model) =
     model.ViewportWidth < compactScreenThreshold
 
 let shouldHideStats (model: Model) =
-    isRunning model.Phase && isCompactScreen model
+    isRunning model.Phase && (isCompactScreen model || model.IsTouchDevice)
 
 let celebrationPhrase (model: Model) =
     model.Celebration.LastPhrase
@@ -96,6 +97,7 @@ type Msg =
     | StartGame
     | TogglePause
     | ChangeDirection of Direction
+    | TouchSwiped of Direction
     | Restart
     | SetPlayerName of string
     | HighScoreLoaded of HighScore option
@@ -192,6 +194,7 @@ let initModel =
           LastEel = (Game.initialState ()).Eel }
       Intermission = { CountdownMs = Config.gameplay.StartCountdownMs }
       Phase = Splash
+      IsTouchDevice = false
       BoardLetters = createBoardLetters ()
       Scores = []
       ScoresLoading = true

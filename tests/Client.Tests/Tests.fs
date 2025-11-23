@@ -74,6 +74,37 @@ let ``progressParts clamps built portion to phrase length`` () =
     Assert.Equal("", remaining)
 
 [<Fact>]
+let ``shouldHideStats hides while running on compact screen`` () =
+    let model =
+        { initModel with
+            Phase = GamePhase.Running
+            ViewportWidth = compactScreenThreshold - 10.0
+            ScoresLoading = false }
+
+    Assert.True(shouldHideStats model)
+
+[<Fact>]
+let ``shouldHideStats hides while running on touch devices`` () =
+    let model =
+        { initModel with
+            Phase = GamePhase.Running
+            ViewportWidth = defaultViewportWidth
+            IsTouchDevice = true
+            ScoresLoading = false }
+
+    Assert.True(shouldHideStats model)
+
+[<Fact>]
+let ``shouldHideStats returns false when not running`` () =
+    let model =
+        { initModel with
+            Phase = GamePhase.Splash
+            ViewportWidth = compactScreenThreshold - 10.0
+            IsTouchDevice = true }
+
+    Assert.False(shouldHideStats model)
+
+[<Fact>]
 let ``changeDirection ignores opposite direction`` () =
     let state =
         { Game.initialState () with

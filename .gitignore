@@ -14,6 +14,7 @@ obj/
 dist/
 src/Server/wwwroot/*
 !src/Server/wwwroot/.gitkeep
+publish/
 
 # Node and tooling
 node_modules/
